@@ -124,5 +124,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Certificates
+# Certificates and secrets
 certs/
+secrets.json

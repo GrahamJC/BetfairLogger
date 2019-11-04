@@ -1,10 +1,9 @@
 import betfairlightweight
-import pprint
+import json
 
-AppKey = 'V21Qsfs6cp7LSSXO'
-Username = 'graham.cockell@outlook.com'
-Password = 'd57j*PZk'
+with open('secrets.json') as f:
+    secrets = json.loads(f.read())
 
-trading = betfairlightweight.APIClient(Username, Password, app_key=AppKey, cert_files=['./certs/client-2048.crt', './certs/client-2048.key'])
+trading = betfairlightweight.APIClient(secrets['username'], secrets['password'], app_key=secrets['app_key'], cert_files=['./certs/client-2048.crt', './certs/client-2048.key'])
 trading.login()
 print(trading.betting.list_event_types())
