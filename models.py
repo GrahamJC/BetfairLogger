@@ -44,8 +44,8 @@ class Runner(Base):
     betfair_id = Column(BigInteger, nullable=False)
     name = Column(String, nullable=False)
     sort_priority = Column(Integer, nullable=False)
-    #metadata
     books = relationship('RunnerBook', backref='runner')
+    #metadata
 
 
 class MarketBook(Base):
@@ -58,17 +58,17 @@ class MarketBook(Base):
     delayed = Column(Boolean)
     status = Column(String, nullable=False)
     bet_delay = Column(Integer, nullable=False)
-    bsp_reconciled = Column(Boolean)
-    complete = Column(Boolean)
-    inplay = Boolean()
+    bsp_reconciled = Column(Boolean, nullable=False)
+    complete = Column(Boolean, nullable=False)
+    inplay = Column(Boolean, nullable=False)
     number_of_winners = Column(Integer, nullable=False)
     number_of_runners = Column(Integer, nullable=False)
     number_of_active_runners = Column(Integer, nullable=False)
     last_match_time = Column(DateTime, nullable=True)
     total_matched = Column(Float, nullable=False)
     total_available = Column(Float, nullable=False)
-    cross_matching = Boolean()
-    runners_voidable = Boolean()
+    cross_matching = Column(Boolean, nullable=False)
+    runners_voidable = Column(Boolean, nullable=False)
     version = Column(BigInteger, nullable=False)
     runners = relationship('RunnerBook', backref='market_book')
     #key_line_description

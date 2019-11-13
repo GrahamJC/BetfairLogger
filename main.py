@@ -8,6 +8,11 @@ import betfairlightweight as bfl
 
 from models import Event, Market, Runner, MarketBook, RunnerBook
 
+# DB connection URL
+SQLALCHEMY_URL = 'postgresql://postgres:barnum@qnap:32768/betfairlogger'
+#SQLALCHEMY_URL = 'postgresql://postgres:barnum@localhost/betfairlogger'
+
+
 
 def get_events(db_session, betfair_api, date):
 
@@ -16,8 +21,8 @@ def get_events(db_session, betfair_api, date):
         filter = bfl.filters.market_filter(
             event_type_ids = [7],
             market_countries = ['GB', 'IE'],
-            market_type_codes=['WIN'],
-            market_start_time={
+            market_type_codes = ['WIN'],
+            market_start_time = {
                 'from': date.strftime("%Y-%m-%dT%TZ"),
                 'to': (date + datetime.timedelta(days=1)).strftime("%Y-%m-%dT%TZ"),
             },
@@ -28,12 +33,12 @@ def get_events(db_session, betfair_api, date):
         event = db_session.query(Event).filter(Event.betfair_id==bfl_event.id).one_or_none()
         if not event:
             event = Event(
-                betfair_id=bfl_event.id,
-                name=bfl_event.name,
-                country_code=bfl_event.country_code,
-                time_zone=bfl_event.time_zone,
-                venue=bfl_event.venue,
-                open_date=bfl_event.open_date
+                betfair_id = bfl_event.id,
+                name = bfl_event.name,
+                country_code = bfl_event.country_code,
+                time_zone = bfl_event.time_zone,
+                venue = bfl_event.venue,
+                open_date = bfl_event.open_date
             )
             db_session.add(event)
         events.append(event)
@@ -56,21 +61,21 @@ def get_markets(db_session, betfair_api, event):
         market = db_session.query(Market).filter(Market.betfair_id==bfl_market.market_id).one_or_none()
         if not market:
             market = Market(
-                event_id=event.id,
-                betfair_id=bfl_market.market_id,
-                name=bfl_market.market_name,
-                start_time=bfl_market.market_start_time,
-                total_matched=bfl_market.total_matched
+                event_id = event.id,
+                betfair_id = bfl_market.market_id,
+                name = bfl_market.market_name,
+                start_time = bfl_market.market_start_time,
+                total_matched = bfl_market.total_matched
             )
             db_session.add(market)
             for bfl_runner in bfl_market.runners:
                 runner = db_session.query(Runner).filter(Runner.betfair_id==bfl_runner.selection_id).one_or_none()
                 if not runner:
                     runner = Runner(
-                        market_id=market.id,
-                        betfair_id=bfl_runner.selection_id,
-                        name=bfl_runner.runner_name,
-                        sort_priority=bfl_runner.sort_priority
+                        market_id = market.id,
+                        betfair_id = bfl_runner.selection_id,
+                        name = bfl_runner.runner_name,
+                        sort_priority = bfl_runner.sort_priority
                     )
                     db_session.add(runner)
         markets.append(market)
@@ -103,12 +108,12 @@ def get_market_book(db_session, betfair_api, market):
             total_available = bfl_market_book.total_available,
             cross_matching = bfl_market_book.cross_matching,
             runners_voidable = bfl_market_book.runners_voidable,
-            version = 0 #bfl_market_book.version
+            version = bfl_market_book.version
         )
         db_session.add(market_book)
         #print(f"  {datetime.datetime.now()}: Market book created")
         for bfl_runner_book in bfl_market_book.runners:
-            runner = db_session.query(Runner).filter(Runner.betfair_id==bfl_runner_book.selection_id).one_or_none()
+            runner = db_session.query(Runner).filter(Runner.betfair_id == bfl_runner_book.selection_id).one_or_none()
             if runner:
                 runner_book = RunnerBook(
                     market_book_id = market_book.id,
@@ -126,10 +131,6 @@ def get_market_book(db_session, betfair_api, market):
         #print(f"  {datetime.datetime.now()}: DB changes committed")
     return market_book
 
-
-# DB connection URL
-#SQLALCHEMY_URL = 'postgresql://postgres:barnum@qnap:32768/betfairlogger'
-SQLALCHEMY_URL = 'postgresql://postgres:barnum@localhost/betfairlogger'
 
 # Read secrets
 with open('secrets.json') as f:
@@ -179,12 +180,20 @@ try:
                 secs_to_start = (market.start_time - datetime.datetime.now()).total_seconds()
                 secs_since_last_poll = (datetime.datetime.now() - market.last_book.date_time).total_seconds() if market.last_book else 3600
                 
-                # Update market if less than 15 mins until start
-                if secs_to_start <= 900:
+                # Always update market if less than 10 mins until start
+                if secs_to_start <= 600:
                     update_markets.append(market)
                 
-                # Update market if less than 60 mins until start and more than 10 seconds since last update
-                elif (secs_to_start <= 3600) and (secs_since_last_poll > 10):
+                # Update market if less than 20 mins until start and more than 5 seconds since last update
+                elif (secs_to_start <= 1200) and (secs_since_last_poll > 5):
+                    update_markets.append(market)
+                
+                # Update market if less than 30 mins until start and more than 15 seconds since last update
+                elif (secs_to_start <= 1800) and (secs_since_last_poll > 15):
+                    update_markets.append(market)
+                
+                # Update market if less than 60 mins until start and more than 60 seconds since last update
+                elif (secs_to_start <= 3600) and (secs_since_last_poll > 60):
                     update_markets.append(market)
 
         # Update markets (this could be done in a single API call for multiple markets but
