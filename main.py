@@ -91,44 +91,47 @@ def get_market_book(db_session, betfair_api, market):
     #print(f"  {datetime.datetime.now()}: API response received")
     if bfl_market_books:
         bfl_market_book = bfl_market_books[0]
-        market_book = MarketBook(
-            market_id = market.id,
-            date_time = datetime.datetime.now(),
-            delayed = bfl_market_book.is_market_data_delayed,
-            status = bfl_market_book.status,
-            bet_delay = bfl_market_book.bet_delay,
-            bsp_reconciled = bfl_market_book.bsp_reconciled,
-            complete = bfl_market_book.complete,
-            inplay = bfl_market_book.inplay,
-            number_of_winners = bfl_market_book.number_of_winners,
-            number_of_runners = bfl_market_book.number_of_runners,
-            number_of_active_runners = bfl_market_book.number_of_active_runners,
-            last_match_time = bfl_market_book.last_match_time,
-            total_matched = bfl_market_book.total_matched,
-            total_available = bfl_market_book.total_available,
-            cross_matching = bfl_market_book.cross_matching,
-            runners_voidable = bfl_market_book.runners_voidable,
-            version = bfl_market_book.version
-        )
-        db_session.add(market_book)
-        #print(f"  {datetime.datetime.now()}: Market book created")
-        for bfl_runner_book in bfl_market_book.runners:
-            runner = db_session.query(Runner).filter(Runner.betfair_id == bfl_runner_book.selection_id).one_or_none()
-            if runner:
-                runner_book = RunnerBook(
-                    market_book_id = market_book.id,
-                    runner_id = runner.id,
-                    handicap = bfl_runner_book.handicap,
-                    status = bfl_runner_book.status,
-                    adjustment_factor = bfl_runner_book.adjustment_factor,
-                    last_price_traded = bfl_runner_book.last_price_traded,
-                    total_matched = bfl_runner_book.total_matched,
-                    removal_date = bfl_runner_book.removal_date
-                )
-                db_session.add(runner_book)
-        #print(f"  {datetime.datetime.now()}: Runner books created")
-        db_session.commit()
-        #print(f"  {datetime.datetime.now()}: DB changes committed")
+
+        # Ignore suspended markets if the previous update was also suspended
+        if (bfl_market_book.status != 'SUSPENDED') or not market.last_book or (market.last_book.status != 'SUSPENDED'):
+            market_book = MarketBook(
+                market_id = market.id,
+                date_time = datetime.datetime.now(),
+                delayed = bfl_market_book.is_market_data_delayed,
+                status = bfl_market_book.status,
+                bet_delay = bfl_market_book.bet_delay,
+                bsp_reconciled = bfl_market_book.bsp_reconciled,
+                complete = bfl_market_book.complete,
+                inplay = bfl_market_book.inplay,
+                number_of_winners = bfl_market_book.number_of_winners,
+                number_of_runners = bfl_market_book.number_of_runners,
+                number_of_active_runners = bfl_market_book.number_of_active_runners,
+                last_match_time = bfl_market_book.last_match_time,
+                total_matched = bfl_market_book.total_matched,
+                total_available = bfl_market_book.total_available,
+                cross_matching = bfl_market_book.cross_matching,
+                runners_voidable = bfl_market_book.runners_voidable,
+                version = bfl_market_book.version
+            )
+            db_session.add(market_book)
+            #print(f"  {datetime.datetime.now()}: Market book created")
+            for bfl_runner_book in bfl_market_book.runners:
+                runner = db_session.query(Runner).filter(Runner.betfair_id == bfl_runner_book.selection_id).one_or_none()
+                if runner:
+                    runner_book = RunnerBook(
+                        market_book_id = market_book.id,
+                        runner_id = runner.id,
+                        handicap = bfl_runner_book.handicap,
+                        status = bfl_runner_book.status,
+                        adjustment_factor = bfl_runner_book.adjustment_factor,
+                        last_price_traded = bfl_runner_book.last_price_traded,
+                        total_matched = bfl_runner_book.total_matched,
+                        removal_date = bfl_runner_book.removal_date
+                    )
+                    db_session.add(runner_book)
+            #print(f"  {datetime.datetime.now()}: Runner books created")
+            db_session.commit()
+            #print(f"  {datetime.datetime.now()}: DB changes committed")
     return market_book
 
 
@@ -180,20 +183,24 @@ try:
                 secs_to_start = (market.start_time - datetime.datetime.now()).total_seconds()
                 secs_since_last_poll = (datetime.datetime.now() - market.last_book.date_time).total_seconds() if market.last_book else 3600
                 
-                # Always update market if less than 10 mins until start
-                if secs_to_start <= 600:
+                # Always update market if past post time
+                if secs_to_start <= 0:
+                    update_markets.append(market)
+                
+                # Update market if less than 10 mins until start and more than 1 second since last update
+                elif (secs_to_start <= 600) and (secs_since_last_poll >= 1):
                     update_markets.append(market)
                 
                 # Update market if less than 20 mins until start and more than 5 seconds since last update
-                elif (secs_to_start <= 1200) and (secs_since_last_poll > 5):
+                elif (secs_to_start <= 1200) and (secs_since_last_poll >= 5):
                     update_markets.append(market)
                 
                 # Update market if less than 30 mins until start and more than 15 seconds since last update
-                elif (secs_to_start <= 1800) and (secs_since_last_poll > 15):
+                elif (secs_to_start <= 1800) and (secs_since_last_poll >= 15):
                     update_markets.append(market)
                 
                 # Update market if less than 60 mins until start and more than 60 seconds since last update
-                elif (secs_to_start <= 3600) and (secs_since_last_poll > 60):
+                elif (secs_to_start <= 3600) and (secs_since_last_poll >= 60):
                     update_markets.append(market)
 
         # Update markets (this could be done in a single API call for multiple markets but
@@ -201,13 +208,14 @@ try:
         for market in update_markets:
             print(f"{datetime.datetime.now()}: Updating {market.event.name} {market.name} {market.start_time}")
             market_book = get_market_book(db_session, betfair_api, market)
-            market.last_book_id = market_book.id
-            db_session.commit()
+            if market_book:
+                market.last_book_id = market_book.id
+                db_session.commit()
             #print(f"  {datetime.datetime.now()}: Last market book updated")
 
-        # Pause for a second
+        # Pause for half a second
         if markets_open > 0:
-            sleep(1)
+            sleep(0.5)
 
 finally:
     # Logout from Betfair
