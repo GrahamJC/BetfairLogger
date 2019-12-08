@@ -42,7 +42,7 @@ def get_events(db_session, betfair_api, date):
             )
             db_session.add(event)
         events.append(event)
-        db_session.commit()
+    db_session.commit()
     return events
 
 
@@ -58,7 +58,7 @@ def get_markets(db_session, betfair_api, event):
         market_projection=['MARKET_START_TIME', 'RUNNER_DESCRIPTION']
     )
     for bfl_market in bfl_markets:
-        market = db_session.query(Market).filter(Market.betfair_id==bfl_market.market_id).one_or_none()
+        market = db_session.query(Market).filter(Market.event_id == event.id, Market.betfair_id == bfl_market.market_id).one_or_none()
         if not market:
             market = Market(
                 event_id = event.id,
@@ -68,18 +68,18 @@ def get_markets(db_session, betfair_api, event):
                 total_matched = bfl_market.total_matched
             )
             db_session.add(market)
-            for bfl_runner in bfl_market.runners:
-                runner = db_session.query(Runner).filter(Runner.betfair_id==bfl_runner.selection_id).one_or_none()
-                if not runner:
-                    runner = Runner(
-                        market_id = market.id,
-                        betfair_id = bfl_runner.selection_id,
-                        name = bfl_runner.runner_name,
-                        sort_priority = bfl_runner.sort_priority
-                    )
-                    db_session.add(runner)
         markets.append(market)
-        db_session.commit()
+        for bfl_runner in bfl_market.runners:
+            runner = db_session.query(Runner).filter(Runner.market_id == market.id, Runner.betfair_id == bfl_runner.selection_id).one_or_none()
+            if not runner:
+                runner = Runner(
+                    market_id = market.id,
+                    betfair_id = bfl_runner.selection_id,
+                    name = bfl_runner.runner_name,
+                    sort_priority = bfl_runner.sort_priority
+                )
+                db_session.add(runner)
+    db_session.commit()
     return markets
 
 
@@ -116,7 +116,7 @@ def get_market_book(db_session, betfair_api, market):
             db_session.add(market_book)
             #print(f"  {datetime.datetime.now()}: Market book created")
             for bfl_runner_book in bfl_market_book.runners:
-                runner = db_session.query(Runner).filter(Runner.betfair_id == bfl_runner_book.selection_id).one_or_none()
+                runner = db_session.query(Runner).filter(Runner.market_id == market_book.market_id, Runner.betfair_id == bfl_runner_book.selection_id).one_or_none()
                 if runner:
                     runner_book = RunnerBook(
                         market_book_id = market_book.id,
@@ -183,7 +183,7 @@ try:
                 secs_to_start = (market.start_time - datetime.datetime.now()).total_seconds()
                 secs_since_last_poll = (datetime.datetime.now() - market.last_book.date_time).total_seconds() if market.last_book else 3600
                 
-                # Always update market if past post time
+                # Always update market after post time
                 if secs_to_start <= 0:
                     update_markets.append(market)
                 
@@ -210,12 +210,16 @@ try:
             market_book = get_market_book(db_session, betfair_api, market)
             if market_book:
                 market.last_book_id = market_book.id
+                if market_book.status == 'OPEN':
+                    if market_book.inplay:
+                        market.last_inplay_book_id = market_book.id
+                    else:
+                        market.last_prerace_book_id = market_book.id
                 db_session.commit()
             #print(f"  {datetime.datetime.now()}: Last market book updated")
 
         # Pause for half a second
-        if markets_open > 0:
-            sleep(0.5)
+        sleep(0.5)
 
 finally:
     # Logout from Betfair
