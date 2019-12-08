@@ -28,32 +28,102 @@ class Market(Base):
     name = Column(String, nullable=False)
     start_time = Column(DateTime, nullable=False)
     total_matched = Column(Float, nullable=False)
-    runners = relationship('Runner', order_by='Runner.sort_priority', backref='market')
+    runners = relationship('MarketRunner', order_by='MarketRunner.sort_priority', backref='market')
     books = relationship('MarketBook', primaryjoin='MarketBook.market_id==Market.id', order_by='MarketBook.date_time', backref='market')
     last_book_id = Column(Integer, ForeignKey('market_book.id'), nullable=True, index = True)
-    last_book = relationship('MarketBook', foreign_keys=[last_book_id])
+    #last_book = relationship('MarketBook', foreign_keys=[last_book_id])
     last_prerace_book_id = Column(Integer, ForeignKey('market_book.id'), nullable=True, index = True)
-    last_prerace_book = relationship('MarketBook', foreign_keys=[last_prerace_book_id])
+    #last_prerace_book = relationship('MarketBook', foreign_keys=[last_prerace_book_id])
     last_inplay_book_id = Column(Integer, ForeignKey('market_book.id'), nullable=True, index = True)
-    last_inplay_book = relationship('MarketBook', foreign_keys=[last_inplay_book_id])
+    #last_inplay_book = relationship('MarketBook', foreign_keys=[last_inplay_book_id])
 
+    @property
+    def last_book(self):
+        session = Session.object_session(self)
+        return (
+            session.query(MarketBook)
+                .filter(MarketBook.market_id == self.id)
+                .order_by(MarketBook.date_time.desc())
+                .first()
+        )
+
+    @property
+    def last_prerace_book(self):
+        session = Session.object_session(self)
+        return (
+            session.query(MarketBook)
+                .filter(MarketBook.market_id == self.id, MarketBook.status == 'OPEN', MarketBook.inplay == False)
+                .order_by(MarketBook.date_time.desc())
+                .first()
+        )
+
+    @property
+    def last_inplay_book(self):
+        session = Session.object_session(self)
+        return (
+            session.query(MarketBook)
+                .filter(MarketBook.market_id == self.id, MarketBook.status == 'OPEN', MarketBook.inplay == True)
+                .order_by(MarketBook.date_time.desc())
+                .first()
+        )
 
 class Runner(Base):
 
     __tablename__ = 'runner'
 
     id = Column(Integer, primary_key=True)
-    market_id = Column(Integer, ForeignKey('market.id'), nullable=False, index = True)
     betfair_id = Column(BigInteger, nullable=False, index = True)
     name = Column(String, nullable=False)
+    markets = relationship('MarketRunner', backref='runner')
+
+class MarketRunner(Base):
+
+    __tablename__ = 'market_runner'
+
+    id = Column(Integer, primary_key=True)
+    market_id = Column(Integer, ForeignKey('market.id'), nullable=False, index = True)
+    runner_id = Column(Integer, ForeignKey('runner.id'), nullable=False, index = True)
     sort_priority = Column(Integer, nullable=False)
-    books = relationship('RunnerBook', backref='runner')
+    books = relationship('MarketRunnerBook', backref='market_runner')
     #metadata
 
     @property
-    def starting_price(self):
+    def last_book(self):
         session = Session.object_session(self)
-        last_prerace_book = session.query(RunnerBook).filter(RunnerBook.runner_id == self.id, RunnerBook.market_book_id == self.market.last_prerace_book_id).one_or_none()
+        return (
+            session.query(MarketRunnerBook)
+                .join(MarketBook)
+                .filter(MarketRunnerBook.market_runner_id == self.id)
+                .order_by(MarketBook.date_time.desc())
+                .first()
+        )
+
+    @property
+    def last_prerace_book(self):
+        session = Session.object_session(self)
+        return (
+            session.query(MarketRunnerBook)
+                .join(MarketBook)
+                .filter(MarketRunnerBook.market_runner_id == self.id, MarketBook.status == 'OPEN', MarketBook.inplay == False)
+                .order_by(MarketBook.date_time.desc())
+                .first()
+        )
+
+    @property
+    def last_inplay_book(self):
+        session = Session.object_session(self)
+        return (
+            session.query(MarketRunnerBook)
+                .join(MarketBook)
+                .filter(MarketRunnerBook.market_runner_id == self.id, MarketBook.status == 'OPEN', MarketBook.inplay == True)
+                .order_by(MarketBook.date_time.desc())
+                .first()
+        )
+    @property
+    def starting_price(self):
+        #session = Session.object_session(self)
+        #last_prerace_book = session.query(MarketRunnerBook).filter(MarketRunnerBook.market_runner_id == self.id, MarketRunnerBook.market_book_id == self.market.last_prerace_book_id).one_or_none()
+        last_prerace_book = self.last_prerace_book
         return last_prerace_book.last_price_traded if last_prerace_book else None
 
 
@@ -79,16 +149,16 @@ class MarketBook(Base):
     cross_matching = Column(Boolean, nullable=False)
     runners_voidable = Column(Boolean, nullable=False)
     version = Column(BigInteger, nullable=False)
-    runners = relationship('RunnerBook', backref='market_book')
+    runners = relationship('MarketRunnerBook', backref='market_book')
     #key_line_description
 
-class RunnerBook(Base):
+class MarketRunnerBook(Base):
 
-    __tablename__ = 'runner_book'
+    __tablename__ = 'market_runner_book'
 
     id = Column(Integer, primary_key=True)
     market_book_id = Column(Integer, ForeignKey('market_book.id'), nullable=False, index = True)
-    runner_id = Column(Integer, ForeignKey('runner.id'), nullable=False, index = True)
+    market_runner_id = Column(Integer, ForeignKey('market_runner.id'), nullable=False, index = True)
     handicap = Column(Float, nullable=False)
     status = Column(String, nullable=False)
     adjustment_factor =  Column(Float, nullable=False)

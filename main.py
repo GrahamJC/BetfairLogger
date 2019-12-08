@@ -6,7 +6,7 @@ import sqlalchemy as sql
 
 import betfairlightweight as bfl
 
-from models import Event, Market, Runner, MarketBook, RunnerBook
+from models import Event, Runner, Market, MarketRunner, MarketBook, MarketRunnerBook
 
 # DB connection URL
 SQLALCHEMY_URL = 'postgresql://postgres:barnum@qnap:32768/betfairlogger'
@@ -70,15 +70,21 @@ def get_markets(db_session, betfair_api, event):
             db_session.add(market)
         markets.append(market)
         for bfl_runner in bfl_market.runners:
-            runner = db_session.query(Runner).filter(Runner.market_id == market.id, Runner.betfair_id == bfl_runner.selection_id).one_or_none()
+            runner = db_session.query(Runner).filter(Runner.betfair_id == bfl_runner.selection_id).one_or_none()
             if not runner:
                 runner = Runner(
-                    market_id = market.id,
                     betfair_id = bfl_runner.selection_id,
                     name = bfl_runner.runner_name,
-                    sort_priority = bfl_runner.sort_priority
                 )
                 db_session.add(runner)
+            market_runner = db_session.query(MarketRunner).filter(MarketRunner.runner_id == runner.id).one_or_none()
+            if not market_runner:
+                market_runner = MarketRunner(
+                    market_id = market.id,
+                    runner_id = runner.id,
+                    sort_priority = bfl_runner.sort_priority
+                )
+                db_session.add(market_runner)
     db_session.commit()
     return markets
 
@@ -116,19 +122,21 @@ def get_market_book(db_session, betfair_api, market):
             db_session.add(market_book)
             #print(f"  {datetime.datetime.now()}: Market book created")
             for bfl_runner_book in bfl_market_book.runners:
-                runner = db_session.query(Runner).filter(Runner.market_id == market_book.market_id, Runner.betfair_id == bfl_runner_book.selection_id).one_or_none()
+                runner = db_session.query(Runner).filter(Runner.betfair_id == bfl_runner_book.selection_id).one_or_none()
                 if runner:
-                    runner_book = RunnerBook(
-                        market_book_id = market_book.id,
-                        runner_id = runner.id,
-                        handicap = bfl_runner_book.handicap,
-                        status = bfl_runner_book.status,
-                        adjustment_factor = bfl_runner_book.adjustment_factor,
-                        last_price_traded = bfl_runner_book.last_price_traded,
-                        total_matched = bfl_runner_book.total_matched,
-                        removal_date = bfl_runner_book.removal_date
-                    )
-                    db_session.add(runner_book)
+                    market_runner = db_session.query(MarketRunner).filter(MarketRunner.market_id == market_book.market_id, MarketRunner.runner_id == runner.id).one_or_none()
+                    if market_runner:
+                        market_runner_book = MarketRunnerBook(
+                            market_book_id = market_book.id,
+                            market_runner_id = market_runner.id,
+                            handicap = bfl_runner_book.handicap,
+                            status = bfl_runner_book.status,
+                            adjustment_factor = bfl_runner_book.adjustment_factor,
+                            last_price_traded = bfl_runner_book.last_price_traded,
+                            total_matched = bfl_runner_book.total_matched,
+                            removal_date = bfl_runner_book.removal_date
+                        )
+                        db_session.add(market_runner_book)
             #print(f"  {datetime.datetime.now()}: Runner books created")
             db_session.commit()
             #print(f"  {datetime.datetime.now()}: DB changes committed")

@@ -11,7 +11,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
-from models import Event, Market, Runner
+from models import Event, Market, Runner, MarketRunner
 
 # DB connection URL
 SQLALCHEMY_URL = 'postgresql://postgres:barnum@qnap:32768/betfairlogger'
@@ -38,6 +38,10 @@ class MainWindow:
 
     def __init__(self, master):
         self.master = master
+        self.option_period = IntVar()
+        self.option_period.set(60)
+        self.option_plot = StringVar()
+        self.option_plot.set('Price')
         self.create_widgets()
         self.year_combo.current(0)
         self.year_selected()
@@ -103,14 +107,17 @@ class MainWindow:
         Label(self.runner_frame, text = 'Select event').pack(side = TOP)
         self.runner_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
         self.period_frame = LabelFrame(self.options_frame, text = 'Period')
-        self.option_period = IntVar()
         Radiobutton(self.period_frame, text = '60 mins', variable = self.option_period, value = 60, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = '30 mins', variable = self.option_period, value = 30, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = '10 mins', variable = self.option_period, value = 10, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = '5 mins', variable = self.option_period, value = 5, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = 'Inplay', variable = self.option_period, value = 0, command = self.update_period).pack(side = TOP, anchor = W)
-        self.option_period.set(60)
         self.period_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
+        self.plot_frame = LabelFrame(self.options_frame, text = 'Plot')
+        Radiobutton(self.plot_frame, text = 'Price', variable = self.option_plot, value = 'Price', command = self.update_plot).pack(side = TOP, anchor = W)
+        Radiobutton(self.plot_frame, text = 'Volume', variable = self.option_plot, value = 'Volume', command = self.update_plot).pack(side = TOP, anchor = W)
+        Radiobutton(self.plot_frame, text = 'Volume (percent)', variable = self.option_plot, value = 'VolumePercent', command = self.update_plot).pack(side = TOP, anchor = W)
+        self.plot_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
         self.options_frame.pack(side = LEFT, fill = Y, expand = False)
 
         self.graph_frame = Frame(self.master)
@@ -130,11 +137,11 @@ class MainWindow:
 
     def update_runners(self, market_id):
         self.runners = [
-            RunnerInfo(r.id, r.name, r.starting_price)
-            for r in db_session.query(Runner).filter(Runner.market_id == market_id) if r.starting_price
+            RunnerInfo(r.id, r.runner.name, r.starting_price)
+            for r in db_session.query(MarketRunner).filter(MarketRunner.market_id == market_id) if r.starting_price
         ]
         self.runners.sort(key = lambda r: r.price)
-        for i in range(min(5, len(self.runners))):
+        for i in range(min(3, len(self.runners))):
             self.runners[i].selected = True
         for widget in self.runner_frame.winfo_children():
             widget.destroy()
@@ -144,16 +151,20 @@ class MainWindow:
     def update_period(self):
         self.draw_graph(self.market_id)
 
+    def update_plot(self):
+        self.draw_graph(self.market_id)
+
     def update_runners_selected(self):
         self.draw_graph(self.market_id)
 
     def update_market_data(self, market_id):
         query = (
-            'select extract(epoch from mb.date_time - m.start_time)/60 mins, r.name, mb.inplay, rb.last_price_traded'
+            'select extract(epoch from mb.date_time - m.start_time)/60 mins, r.name, mb.inplay, mrb.last_price_traded, mrb.total_matched, (mrb.total_matched / mb.total_matched) * 100 percent'
             ' from market_book mb'
             '   join market m on m.id = mb.market_id'
-            '   join runner_book rb on rb.market_book_id = mb.id'
-            '   join runner r on r.id = rb.runner_id'
+            '   join market_runner_book mrb on mrb.market_book_id = mb.id'
+            '   join market_runner mr on mr.id = mrb.market_runner_id'
+            '   join runner r on r.id = mr.runner_id'
             f" where mb.market_id = {market_id}"
             ' and mb.status = \'OPEN\''
             ' order by mb.date_time, r.name'
@@ -170,13 +181,20 @@ class MainWindow:
             data = self.market_data
             data = data.iloc[data.index.isin(runners_selected, level = 1)]
             period = self.option_period.get()
+            plot = self.option_plot.get()
             if period == 0:
                 data = data[data['inplay'] == True]
-                data = data[data['last_price_traded'] <= 50]
+                if plot == 'Price':
+                    data = data[data['last_price_traded'] <= 25]
             else:
                 data = data[data['inplay'] == False]
                 data = data.query(f"mins >= -{period}")
-            data['last_price_traded'].unstack().plot(ax = self.graph_ax)
+            if plot == 'Price':
+                data['last_price_traded'].unstack().plot(ax = self.graph_ax)
+            elif plot == 'Volume':
+                data['total_matched'].unstack().plot(ax = self.graph_ax)
+            elif plot == 'VolumePercent':
+                data['percent'].unstack().plot(ax = self.graph_ax)
         self.graph_canvas.draw()
 
 
