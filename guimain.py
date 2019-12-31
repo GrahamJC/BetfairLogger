@@ -2,7 +2,6 @@ import datetime as dt
 
 from tkinter import *
 from tkinter.ttk import *
-from tkcalendar import DateEntry
 
 import numpy as np
 import pandas as pd
