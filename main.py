@@ -1,6 +1,7 @@
 import datetime
 import json
 from time import sleep
+import traceback
 
 import sqlalchemy as sql
 
@@ -9,7 +10,8 @@ import betfairlightweight as bfl
 from models import Event, Runner, Market, MarketRunner, MarketBook, MarketRunnerBook
 
 # DB connection URL
-SQLALCHEMY_URL = 'postgresql://postgres:barnum@qnap:32768/betfairlogger'
+SQLALCHEMY_URL = 'postgresql://postgres:barnum@192.168.1.1:32768/betfairlogger'
+#SQLALCHEMY_URL = 'postgresql://postgres:barnum@qnap:32768/betfairlogger'
 #SQLALCHEMY_URL = 'postgresql://postgres:barnum@localhost/betfairlogger'
 
 
@@ -32,6 +34,7 @@ def get_events(db_session, betfair_api, date):
         bfl_event = bfl_event_result.event
         event = db_session.query(Event).filter(Event.betfair_id==bfl_event.id).one_or_none()
         if not event:
+            print(f"New event: {bfl_event.name} ({bfl_event.country_code})")
             event = Event(
                 betfair_id = bfl_event.id,
                 name = bfl_event.name,
@@ -60,6 +63,7 @@ def get_markets(db_session, betfair_api, event):
     for bfl_market in bfl_markets:
         market = db_session.query(Market).filter(Market.event_id == event.id, Market.betfair_id == bfl_market.market_id).one_or_none()
         if not market:
+            print(f"New market: {bfl_market.market_start_time}: {bfl_market.market_name} ({len(bfl_market.runners)} runners)")
             market = Market(
                 event_id = event.id,
                 betfair_id = bfl_market.market_id,
@@ -143,38 +147,15 @@ def get_market_book(db_session, betfair_api, market):
     return market_book
 
 
-# Read secrets
-with open('secrets.json') as f:
-    secrets = json.loads(f.read())
+def log_markets(db_session, betfair_api, date):
 
-# Create DB engine and open a session
-db_engine = sql.create_engine(SQLALCHEMY_URL)
-Session = sql.orm.sessionmaker(bind=db_engine)
-
-# Logon to Betfair
-betfair_api = bfl.APIClient(
-    secrets['username'],
-    secrets['password'],
-    app_key=secrets['betangel_app_key'],
-    cert_files=['./certs/client-2048.crt', './certs/client-2048.key'],
-    lightweight=False
-)
-betfair_api.login()
-
-# Create DB session
-db_session = Session()
-
-# Catch exceptions to make sure that Betfair API and DB are closed down properly
-try:
-
-    # Get events and markets for today
-    today = datetime.date.today()
-    events = get_events(db_session, betfair_api, today)
+    # Get events and markets
+    events = get_events(db_session, betfair_api, date)
     markets = []
     for event in events:
         markets += get_markets(db_session, betfair_api, event)
 
-    # Poll each second to update market books - stop when all markets are closed
+    # Poll to update market books - stop when all markets are closed
     markets_open = len(markets)
     while markets_open > 0:
 
@@ -229,11 +210,91 @@ try:
         # Pause for half a second
         sleep(0.5)
 
-finally:
-    # Logout from Betfair
-    betfair_api.logout()
 
-    # Close DB session
-    db_session.close()
+def wait_until(wake_up):
+
+    wait_seconds = (wake_up - datetime.datetime.now()).total_seconds() 
+    if wait_seconds > 0:
+        print(f"Sleep until {wake_up} ({wait_seconds} seconds)")
+        sleep(wait_seconds)
+
+
+# Banner
+print('Betfair Logger V1.0')
+print('===================')
+print('')
+
+# Read secrets
+with open('secrets.json') as f:
+    secrets = json.loads(f.read())
+
+# Create DB engine and session factory
+db_engine = sql.create_engine(SQLALCHEMY_URL)
+Session = sql.orm.sessionmaker(bind=db_engine)
+
+# Run indefinitely
+while True:
+
+    try:
+        # Wait until 10am
+        today = datetime.date.today()
+        wait_until(datetime.datetime(today.year, today.month, today.day, 10, 0, 0))
+
+        # Create DB session
+        db_session = Session()
+        print('DB session created')
+
+        # Logon to Betfair
+        betfair_api = bfl.APIClient(
+            secrets['username'],
+            secrets['password'],
+            app_key=secrets['betangel_app_key'],
+            cert_files=['./certs/client-2048.crt', './certs/client-2048.key'],
+            lightweight=False
+        )
+        betfair_api.login()
+        print('Logged on to Betfair')
+
+        # Log today's markets
+        log_markets(db_session, betfair_api, today)
+
+        # Logout from Betfair
+        betfair_api.logout()
+        print('Logged off from Betfair')
+        betfair_api = None
+
+        ## Close DB session
+        db_session.close()
+        print('DB session closed')
+        db_session = None
+
+        # Wait until 10am tomorrow
+        tomorrow = today + datetime.timedelta(days = 1)
+        wait_until(datetime.datetime(tomorrow.year, tomorrow.month, tomorrow.day,10, 0, 0))
+
+    except:
+        traceback.print_exc()
+
+    finally:
+
+        try:
+            # Logout from Betfair
+            if betfair_api:
+                betfair_api.logout()
+                print('Logged off from Betfair')
+                betfair_api = None
+
+            # Close DB session
+            if db_session:
+                db_session.close()
+                print('DB session closed')
+                db_session = None
+
+        except:
+            # Ignore exceptions
+            pass
+
+        # Wait 5 seconds before retrying
+        sleep(5)
 
 

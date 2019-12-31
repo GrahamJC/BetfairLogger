@@ -1,0 +1,11 @@
+.git
+.vscode
+.ipynb_checkpoints
+__pycache__
+alembic
+env
+*.ipynb
+*.tar
+
+
+

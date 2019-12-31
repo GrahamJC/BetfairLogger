@@ -127,3 +127,6 @@ dmypy.json
 # Certificates and secrets
 certs/
 secrets.json
+
+# tar files
+*.tar

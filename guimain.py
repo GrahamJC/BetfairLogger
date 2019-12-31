@@ -36,19 +36,24 @@ class RunnerInfo:
 
 class MainWindow:
 
-    def __init__(self, master):
+    def __init__(self, master, db_session):
         self.master = master
+        self.db_session = db_session
         self.option_period = IntVar()
         self.option_period.set(60)
         self.option_plot = StringVar()
         self.option_plot.set('Price')
+        self.option_update_auto = BooleanVar()
+        self.option_update_auto.set(False)
+        self.option_refresh = IntVar()
+        self.option_refresh.set(0)
         self.create_widgets()
         self.year_combo.current(0)
         self.year_selected()
 
     def year_selected(self, event = None):
         year = int(self.year_combo.get())
-        months = [int(row[0]) for row in db_session.query(f"distinct date_part('month', start_time) from market where date_part('year', start_time) = {year} order by date_part('month', start_time)")]
+        months = [int(row[0]) for row in self.db_session.query(f"distinct date_part('month', start_time) from market where date_part('year', start_time) = {year} order by date_part('month', start_time)")]
         self.month_combo['values'] = months
         if months:
             self.month_combo.current(len(months) - 1)
@@ -57,7 +62,7 @@ class MainWindow:
     def month_selected(self, event = None):
         year = int(self.year_combo.get())
         month = int(self.month_combo.get())
-        days = [int(row[0]) for row in db_session.query(f"distinct date_part('day', start_time) from market where date_part('year', start_time) = {year} and date_part('month', start_time) = {month} order by date_part('day', start_time)")]
+        days = [int(row[0]) for row in self.db_session.query(f"distinct date_part('day', start_time) from market where date_part('year', start_time) = {year} and date_part('month', start_time) = {month} order by date_part('day', start_time)")]
         self.day_combo['values'] = days
         if days:
             self.day_combo.current(len(days) - 1)
@@ -68,7 +73,7 @@ class MainWindow:
         month = int(self.month_combo.get())
         day = int(self.day_combo.get())
         date = dt.datetime(year, month, day)
-        markets = db_session.query(Market).filter(sa.cast(Market.start_time, sa.Date) == date).order_by(Market.start_time)
+        markets = self.db_session.query(Market).filter(sa.cast(Market.start_time, sa.Date) == date).order_by(Market.start_time)
         self.market_choices =  {f"{m.start_time:%H:%M}: {m.event.name}, {m.name}" : m.id for m in markets}
         self.market_combo['values'] = [k for k in self.market_choices.keys()]
         self.market_combo.current(0)
@@ -92,7 +97,7 @@ class MainWindow:
         self.month_combo.pack(side = LEFT, padx = 5, pady = 5)
         self.month_combo.bind('<<ComboboxSelected>>', self.month_selected)
         Label(self.select_frame, text = 'Year: ').pack(side = LEFT, padx = 5, pady = 5)
-        years = [int(row[0]) for row in db_session.query("distinct date_part('year', start_time) from market order by date_part('year', start_time) desc")]
+        years = [int(row[0]) for row in self.db_session.query("distinct date_part('year', start_time) from market order by date_part('year', start_time) desc")]
         self.year_combo = Combobox(self.select_frame, state = 'readonly', width = 5, values = years)
         self.year_combo.pack(side = LEFT, padx = 5, pady = 5)
         self.year_combo.bind('<<ComboboxSelected>>', self.year_selected)
@@ -102,24 +107,42 @@ class MainWindow:
         self.market_combo.bind('<<ComboboxSelected>>', self.market_selected)
         self.select_frame.pack(side = TOP, fill = X, expand = False)
 
+        # Options
         self.options_frame = Frame(self.master, width = 150)
+        self.options_frame.pack(side = LEFT, fill = Y, expand = False)
+
+        # Runners
         self.runner_frame = LabelFrame(self.options_frame, text = 'Runners')
-        Label(self.runner_frame, text = 'Select event').pack(side = TOP)
         self.runner_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
+        Label(self.runner_frame, text = 'Select event').pack(side = TOP)
+
+        # Period
         self.period_frame = LabelFrame(self.options_frame, text = 'Period')
+        self.period_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
         Radiobutton(self.period_frame, text = '60 mins', variable = self.option_period, value = 60, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = '30 mins', variable = self.option_period, value = 30, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = '10 mins', variable = self.option_period, value = 10, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = '5 mins', variable = self.option_period, value = 5, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = 'Inplay', variable = self.option_period, value = 0, command = self.update_period).pack(side = TOP, anchor = W)
-        self.period_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
+
+        # Plot variable
         self.plot_frame = LabelFrame(self.options_frame, text = 'Plot')
+        self.plot_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
         Radiobutton(self.plot_frame, text = 'Price', variable = self.option_plot, value = 'Price', command = self.update_plot).pack(side = TOP, anchor = W)
         Radiobutton(self.plot_frame, text = 'Volume', variable = self.option_plot, value = 'Volume', command = self.update_plot).pack(side = TOP, anchor = W)
         Radiobutton(self.plot_frame, text = 'Volume (percent)', variable = self.option_plot, value = 'VolumePercent', command = self.update_plot).pack(side = TOP, anchor = W)
-        self.plot_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
-        self.options_frame.pack(side = LEFT, fill = Y, expand = False)
 
+        # Refresh
+        self.refresh_frame = LabelFrame(self.options_frame, text = 'Refresh')
+        self.refresh_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
+        Radiobutton(self.refresh_frame, text = 'disable', variable = self.option_refresh, value = 0, command = self.auto_refresh).pack(side = TOP, anchor = W)
+        Radiobutton(self.refresh_frame, text = '1 second', variable = self.option_refresh, value = 1, command = self.auto_refresh).pack(side = TOP, anchor = W)
+        Radiobutton(self.refresh_frame, text = '5 seconds', variable = self.option_refresh, value = 5, command = self.auto_refresh).pack(side = TOP, anchor = W)
+        Radiobutton(self.refresh_frame, text = '15 seconds', variable = self.option_refresh, value = 15, command = self.auto_refresh).pack(side = TOP, anchor = W)
+        Radiobutton(self.refresh_frame, text = '30 seconds', variable = self.option_refresh, value = 30, command = self.auto_refresh).pack(side = TOP, anchor = W)
+        Radiobutton(self.refresh_frame, text = '60 seconds', variable = self.option_refresh, value = 60, command = self.auto_refresh).pack(side = TOP, anchor = W)
+
+        # Graph
         self.graph_frame = Frame(self.master)
         self.graph_frame.pack(side = LEFT, fill = BOTH, expand = True)
         self.graph_figure = matplotlib.figure.Figure()
@@ -132,13 +155,10 @@ class MainWindow:
         self.graph_toolbar.pack(side = TOP, fill = BOTH, expand = 0)
         self.graph_toolbar.update()
 
-        self.master.columnconfigure(3, weight = 1)
-        self.master.rowconfigure(1, weight = 1)
-
     def update_runners(self, market_id):
         self.runners = [
             RunnerInfo(r.id, r.runner.name, r.starting_price)
-            for r in db_session.query(MarketRunner).filter(MarketRunner.market_id == market_id) if r.starting_price
+            for r in self.db_session.query(MarketRunner).filter(MarketRunner.market_id == market_id) if r.starting_price
         ]
         self.runners.sort(key = lambda r: r.price)
         for i in range(min(3, len(self.runners))):
@@ -150,6 +170,18 @@ class MainWindow:
 
     def update_period(self):
         self.draw_graph(self.market_id)
+
+    def auto_refresh(self):
+        secs = self.option_refresh.get()
+        if secs:
+            self.refresh_frame.after(secs * 1000, self.refresh)
+
+    def refresh(self):
+        self.update_market_data(self.market_id)
+        self.draw_graph(self.market_id)
+        secs = self.option_refresh.get()
+        if secs:
+            self.refresh_frame.after(secs * 1000, self.refresh)
 
     def update_plot(self):
         self.draw_graph(self.market_id)
@@ -209,7 +241,7 @@ Session = sa.orm.sessionmaker(bind=db_engine)
 db_session = Session()
 
 root = Tk()
-main_window = MainWindow(root)
+main_window = MainWindow(root, db_session)
 root.mainloop()
 
 # Close DB session
