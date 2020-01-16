@@ -147,17 +147,18 @@ class MainWindow:
         # Plots
         self.plot_frame = Frame(self.master)
         self.plot_frame.pack(side = LEFT, fill = BOTH, expand = True)
-        #self.plot_frame.grid_rowconfigure(0, weight = 1)
-        #self.plot_frame.grid_rowconfigure(1, weight = 2)
-        #self.plot_frame.grid_rowconfigure(2, weight = 0)
+        self.plot_frame.grid_rowconfigure(0, weight = 0)
+        self.plot_frame.grid_rowconfigure(1, weight = 1)
+        self.plot_frame.grid_rowconfigure(2, weight = 0)
+        self.plot_frame.grid_columnconfigure(0, weight = 1)
 
         # Market volume plot
         self.market_volume_figure = matplotlib.figure.Figure()
         self.market_volume_ax = self.market_volume_figure.add_subplot()
         self.market_volume_canvas = FigureCanvasTkAgg(self.market_volume_figure, master = self.plot_frame)
         self.market_volume_widget = self.market_volume_canvas.get_tk_widget()
-        self.market_volume_widget.pack(side = TOP, fill = BOTH, expand = True)
-        #self.market_volume_widget.grid(row = 0, column = 0, sticky = 'NSEW')
+        #self.market_volume_widget.pack(side = TOP, fill = BOTH, expand = True)
+        self.market_volume_widget.grid(row = 0, column = 0, sticky = NSEW)
         self.market_volume_canvas.draw()
 
         # Price plot
@@ -165,14 +166,14 @@ class MainWindow:
         self.graph_ax = self.graph_figure.add_subplot()
         self.graph_canvas = FigureCanvasTkAgg(self.graph_figure, master = self.plot_frame)
         self.graph_widget = self.graph_canvas.get_tk_widget()
-        self.graph_widget.pack(side = TOP, fill = BOTH, expand = True)
-        #self.graph_widget.grid(row = 1, column = 0, sticky = 'NSEW')
+        #self.graph_widget.pack(side = TOP, fill = BOTH, expand = True)
+        self.graph_widget.grid(row = 1, column = 0, sticky = NSEW)
         self.graph_canvas.draw()
-        self.graph_toolbar = NavigationToolbar2Tk(self.graph_canvas, self.plot_frame)
+        self.graph_toolbar_frame = Frame(self.plot_frame)
+        self.graph_toolbar = NavigationToolbar2Tk(self.graph_canvas, self.graph_toolbar_frame)
         self.graph_toolbar.pack(side = TOP, fill = BOTH, expand = False)
-        #self.graph_toolbar_frame = Frame(self.plot_frame)
-        #self.graph_toolbar = NavigationToolbar2Tk(self.graph_canvas, self.graph_toolbar_frame)
-        #self.graph_toolbar_frame.grid(row = 2, column = 0)
+        #self.graph_toolbar_frame.pack(side = TOP, fill = BOTH, expand = False)
+        self.graph_toolbar_frame.grid(row = 2, column = 0)
         self.graph_toolbar.update()
 
     def update_runners(self, market_id):
@@ -237,42 +238,43 @@ class MainWindow:
 
     def draw_main_graph(self, market_id):
         self.graph_ax.clear()
-        runners_selected = []
-        for runner in self.runners:
-             if runner.selected:
-                 runners_selected.append(runner.name)
-        if runners_selected:
-            data = self.market_data
-            data = data.iloc[data.index.isin(runners_selected, level = 1)]
-            period = self.option_period.get()
-            plot = self.option_plot.get()
-            if period == 0:
-                data = data[data['inplay'] == True]
+        data = self.market_data
+        if not data.empty:
+            runners_selected = []
+            for runner in self.runners:
+                if runner.selected:
+                    runners_selected.append(runner.name)
+            if runners_selected:
+                data = data.iloc[data.index.isin(runners_selected, level = 1)]
+                period = self.option_period.get()
+                plot = self.option_plot.get()
+                if period == 0:
+                    data = data[data['inplay'] == True]
+                    if plot == 'Price':
+                        data = data[data['last_price_traded'] <= 25]
+                else:
+                    data = data[data['inplay'] == False]
+                    data = data.query(f"mins >= -{period}")
                 if plot == 'Price':
-                    data = data[data['last_price_traded'] <= 25]
-            else:
-                data = data[data['inplay'] == False]
-                data = data.query(f"mins >= -{period}")
-            if plot == 'Price':
-                data['last_price_traded'].unstack().plot(ax = self.graph_ax)
-            elif plot == 'Volume':
-                data['total_matched'].unstack().plot(ax = self.graph_ax)
-            elif plot == 'VolumePercent':
-                data['percent'].unstack().plot(ax = self.graph_ax)
+                    data['last_price_traded'].unstack().plot(ax = self.graph_ax)
+                elif plot == 'Volume':
+                    data['total_matched'].unstack().plot(ax = self.graph_ax)
+                elif plot == 'VolumePercent':
+                    data['percent'].unstack().plot(ax = self.graph_ax)
         self.graph_canvas.draw()
 
     def draw_volume_graph(self, market_id):
         self.market_volume_ax.clear()
         data = self.market_volume_data
-        period = self.option_period.get()
-        plot = self.option_plot.get()
-        if period == 0:
-            data = data[data['inplay'] == True]
-        else:
-            data = data[data['inplay'] == False]
-            data = data.query(f"mins >= -{period}")
-        #data['total_matched'].unstack().plot(ax = self.market_volume_ax)
-        data.plot(ax = self.market_volume_ax)
+        if not data.empty:
+            period = self.option_period.get()
+            plot = self.option_plot.get()
+            if period == 0:
+                data = data[data['inplay'] == True]
+            else:
+                data = data[data['inplay'] == False]
+                data = data.query(f"mins >= -{period}")
+            data.plot(ax = self.market_volume_ax)
         self.market_volume_canvas.draw()
 
     def draw_all_graphs(self, market_id):
