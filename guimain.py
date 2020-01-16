@@ -49,7 +49,9 @@ class MainWindow:
         self.create_widgets()
         self.year_combo.current(0)
         self.year_selected()
-
+        #self.market_volume_data = None
+        #self.market_data = None
+        
     def year_selected(self, event = None):
         year = int(self.year_combo.get())
         months = [int(row[0]) for row in self.db_session.query(f"distinct date_part('month', start_time) from market where date_part('year', start_time) = {year} order by date_part('month', start_time)")]
@@ -80,9 +82,10 @@ class MainWindow:
 
     def market_selected(self, event = None):
         self.market_id = self.market_choices[self.market_combo.get()]
+        self.update_volume_data(self.market_id)
         self.update_runners(self.market_id)
         self.update_market_data(self.market_id)
-        self.draw_graph(self.market_id)
+        self.draw_all_graphs(self.market_id)
 
     def create_widgets(self):
 
@@ -127,9 +130,9 @@ class MainWindow:
         # Plot variable
         self.plot_frame = LabelFrame(self.options_frame, text = 'Plot')
         self.plot_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
-        Radiobutton(self.plot_frame, text = 'Price', variable = self.option_plot, value = 'Price', command = self.update_plot).pack(side = TOP, anchor = W)
-        Radiobutton(self.plot_frame, text = 'Volume', variable = self.option_plot, value = 'Volume', command = self.update_plot).pack(side = TOP, anchor = W)
-        Radiobutton(self.plot_frame, text = 'Volume (percent)', variable = self.option_plot, value = 'VolumePercent', command = self.update_plot).pack(side = TOP, anchor = W)
+        Radiobutton(self.plot_frame, text = 'Price', variable = self.option_plot, value = 'Price', command = self.update_main_plot).pack(side = TOP, anchor = W)
+        Radiobutton(self.plot_frame, text = 'Volume', variable = self.option_plot, value = 'Volume', command = self.update_main_plot).pack(side = TOP, anchor = W)
+        Radiobutton(self.plot_frame, text = 'Volume (percent)', variable = self.option_plot, value = 'VolumePercent', command = self.update_main_plot).pack(side = TOP, anchor = W)
 
         # Refresh
         self.refresh_frame = LabelFrame(self.options_frame, text = 'Refresh')
@@ -141,17 +144,35 @@ class MainWindow:
         Radiobutton(self.refresh_frame, text = '30 seconds', variable = self.option_refresh, value = 30, command = self.auto_refresh).pack(side = TOP, anchor = W)
         Radiobutton(self.refresh_frame, text = '60 seconds', variable = self.option_refresh, value = 60, command = self.auto_refresh).pack(side = TOP, anchor = W)
 
-        # Graph
-        self.graph_frame = Frame(self.master)
-        self.graph_frame.pack(side = LEFT, fill = BOTH, expand = True)
+        # Plots
+        self.plot_frame = Frame(self.master)
+        self.plot_frame.pack(side = LEFT, fill = BOTH, expand = True)
+        #self.plot_frame.grid_rowconfigure(0, weight = 1)
+        #self.plot_frame.grid_rowconfigure(1, weight = 2)
+        #self.plot_frame.grid_rowconfigure(2, weight = 0)
+
+        # Market volume plot
+        self.market_volume_figure = matplotlib.figure.Figure()
+        self.market_volume_ax = self.market_volume_figure.add_subplot()
+        self.market_volume_canvas = FigureCanvasTkAgg(self.market_volume_figure, master = self.plot_frame)
+        self.market_volume_widget = self.market_volume_canvas.get_tk_widget()
+        self.market_volume_widget.pack(side = TOP, fill = BOTH, expand = True)
+        #self.market_volume_widget.grid(row = 0, column = 0, sticky = 'NSEW')
+        self.market_volume_canvas.draw()
+
+        # Price plot
         self.graph_figure = matplotlib.figure.Figure()
         self.graph_ax = self.graph_figure.add_subplot()
-        self.graph_canvas = FigureCanvasTkAgg(self.graph_figure, master = self.graph_frame)
+        self.graph_canvas = FigureCanvasTkAgg(self.graph_figure, master = self.plot_frame)
         self.graph_widget = self.graph_canvas.get_tk_widget()
-        self.graph_widget.pack(side = TOP, fill = BOTH, expand = 1)
+        self.graph_widget.pack(side = TOP, fill = BOTH, expand = True)
+        #self.graph_widget.grid(row = 1, column = 0, sticky = 'NSEW')
         self.graph_canvas.draw()
-        self.graph_toolbar = NavigationToolbar2Tk(self.graph_canvas, self.graph_frame)
-        self.graph_toolbar.pack(side = TOP, fill = BOTH, expand = 0)
+        self.graph_toolbar = NavigationToolbar2Tk(self.graph_canvas, self.plot_frame)
+        self.graph_toolbar.pack(side = TOP, fill = BOTH, expand = False)
+        #self.graph_toolbar_frame = Frame(self.plot_frame)
+        #self.graph_toolbar = NavigationToolbar2Tk(self.graph_canvas, self.graph_toolbar_frame)
+        #self.graph_toolbar_frame.grid(row = 2, column = 0)
         self.graph_toolbar.update()
 
     def update_runners(self, market_id):
@@ -168,7 +189,7 @@ class MainWindow:
             Checkbutton(self.runner_frame, text = f"{runner.name} ({runner.price})", variable = runner._selected, command = self.update_runners_selected).pack(side = TOP, anchor = 'w')
 
     def update_period(self):
-        self.draw_graph(self.market_id)
+        self.draw_all_graphs(self.market_id)
 
     def auto_refresh(self):
         secs = self.option_refresh.get()
@@ -176,17 +197,29 @@ class MainWindow:
             self.refresh_frame.after(secs * 1000, self.refresh)
 
     def refresh(self):
+        self.update_volume_data(self.market_id)
         self.update_market_data(self.market_id)
-        self.draw_graph(self.market_id)
+        self.draw_all_graphs(self.market_id)
         secs = self.option_refresh.get()
         if secs:
             self.refresh_frame.after(secs * 1000, self.refresh)
 
-    def update_plot(self):
-        self.draw_graph(self.market_id)
+    def update_main_plot(self):
+        self.draw_main_graph(self.market_id)
 
     def update_runners_selected(self):
-        self.draw_graph(self.market_id)
+        self.draw_main_graph(self.market_id)
+
+    def update_volume_data(self, market_id):
+        query = (
+            'select extract(epoch from mb.date_time - m.start_time)/60 mins, mb.inplay, mb.total_matched'
+            ' from market_book mb'
+            '   join market m on m.id = mb.market_id'
+            f" where mb.market_id = {market_id}"
+            ' and mb.status = \'OPEN\''
+            ' order by mb.date_time'
+        )
+        self.market_volume_data = pd.read_sql(query, db_engine, index_col = ['mins'])
 
     def update_market_data(self, market_id):
         query = (
@@ -202,7 +235,7 @@ class MainWindow:
         )
         self.market_data = pd.read_sql(query, db_engine, index_col = ['mins', 'name'])
 
-    def draw_graph(self, market_id):
+    def draw_main_graph(self, market_id):
         self.graph_ax.clear()
         runners_selected = []
         for runner in self.runners:
@@ -227,6 +260,24 @@ class MainWindow:
             elif plot == 'VolumePercent':
                 data['percent'].unstack().plot(ax = self.graph_ax)
         self.graph_canvas.draw()
+
+    def draw_volume_graph(self, market_id):
+        self.market_volume_ax.clear()
+        data = self.market_volume_data
+        period = self.option_period.get()
+        plot = self.option_plot.get()
+        if period == 0:
+            data = data[data['inplay'] == True]
+        else:
+            data = data[data['inplay'] == False]
+            data = data.query(f"mins >= -{period}")
+        #data['total_matched'].unstack().plot(ax = self.market_volume_ax)
+        data.plot(ax = self.market_volume_ax)
+        self.market_volume_canvas.draw()
+
+    def draw_all_graphs(self, market_id):
+        self.draw_volume_graph(market_id)
+        self.draw_main_graph(market_id)
 
 
 # Tell matplotlib to use the YkAgg backend
