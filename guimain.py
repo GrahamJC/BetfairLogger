@@ -42,6 +42,8 @@ class MainWindow:
         self.option_period.set(60)
         self.option_plot = StringVar()
         self.option_plot.set('Price')
+        self.option_scale = StringVar()
+        self.option_scale.set('Lin')
         self.option_update_auto = BooleanVar()
         self.option_update_auto.set(False)
         self.option_refresh = IntVar()
@@ -134,6 +136,12 @@ class MainWindow:
         Radiobutton(self.plot_frame, text = 'Volume', variable = self.option_plot, value = 'Volume', command = self.update_main_plot).pack(side = TOP, anchor = W)
         Radiobutton(self.plot_frame, text = 'Volume (percent)', variable = self.option_plot, value = 'VolumePercent', command = self.update_main_plot).pack(side = TOP, anchor = W)
 
+        # Scale type
+        self.scale_frame = LabelFrame(self.options_frame, text = 'Scale')
+        self.scale_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
+        Radiobutton(self.scale_frame, text = 'Linear', variable = self.option_scale, value = 'Lin', command = self.update_main_plot).pack(side = TOP, anchor = W)
+        Radiobutton(self.scale_frame, text = 'Logarithmic', variable = self.option_scale, value = 'Log', command = self.update_main_plot).pack(side = TOP, anchor = W)
+
         # Refresh
         self.refresh_frame = LabelFrame(self.options_frame, text = 'Refresh')
         self.refresh_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
@@ -147,13 +155,13 @@ class MainWindow:
         # Plots
         self.plot_frame = Frame(self.master)
         self.plot_frame.pack(side = LEFT, fill = BOTH, expand = True)
-        self.plot_frame.grid_rowconfigure(0, weight = 0)
+        self.plot_frame.grid_rowconfigure(0, weight = 1)
         self.plot_frame.grid_rowconfigure(1, weight = 1)
         self.plot_frame.grid_rowconfigure(2, weight = 0)
         self.plot_frame.grid_columnconfigure(0, weight = 1)
 
         # Market volume plot
-        self.market_volume_figure = matplotlib.figure.Figure()
+        self.market_volume_figure = matplotlib.figure.Figure(figsize = [10, 2])
         self.market_volume_ax = self.market_volume_figure.add_subplot()
         self.market_volume_canvas = FigureCanvasTkAgg(self.market_volume_figure, master = self.plot_frame)
         self.market_volume_widget = self.market_volume_canvas.get_tk_widget()
@@ -162,7 +170,7 @@ class MainWindow:
         self.market_volume_canvas.draw()
 
         # Price plot
-        self.graph_figure = matplotlib.figure.Figure()
+        self.graph_figure = matplotlib.figure.Figure(figsize = [10, 8])
         self.graph_ax = self.graph_figure.add_subplot()
         self.graph_canvas = FigureCanvasTkAgg(self.graph_figure, master = self.plot_frame)
         self.graph_widget = self.graph_canvas.get_tk_widget()
@@ -220,7 +228,11 @@ class MainWindow:
             ' and mb.status = \'OPEN\''
             ' order by mb.date_time'
         )
-        self.market_volume_data = pd.read_sql(query, db_engine, index_col = ['mins'])
+        data = pd.read_sql(query, db_engine, index_col = ['mins'])
+        data['increase_matched'] = data['total_matched'].diff()
+        data['seconds_matched'] = data.index.to_series().diff() * 60
+        data['per_sec_matched'] = data['increase_matched'] / data['seconds_matched']
+        self.market_volume_data = data
 
     def update_market_data(self, market_id):
         query = (
@@ -248,6 +260,7 @@ class MainWindow:
                 data = data.iloc[data.index.isin(runners_selected, level = 1)]
                 period = self.option_period.get()
                 plot = self.option_plot.get()
+                scale = self.option_scale.get()
                 if period == 0:
                     data = data[data['inplay'] == True]
                     if plot == 'Price':
@@ -256,9 +269,9 @@ class MainWindow:
                     data = data[data['inplay'] == False]
                     data = data.query(f"mins >= -{period}")
                 if plot == 'Price':
-                    data['last_price_traded'].unstack().plot(ax = self.graph_ax)
+                    data['last_price_traded'].unstack().plot(ax = self.graph_ax, logy = (scale == 'Log'))
                 elif plot == 'Volume':
-                    data['total_matched'].unstack().plot(ax = self.graph_ax)
+                    data['total_matched'].unstack().plot(ax = self.graph_ax, logy = (scale == 'Log'))
                 elif plot == 'VolumePercent':
                     data['percent'].unstack().plot(ax = self.graph_ax)
         self.graph_canvas.draw()
@@ -274,7 +287,7 @@ class MainWindow:
             else:
                 data = data[data['inplay'] == False]
                 data = data.query(f"mins >= -{period}")
-            data.plot(ax = self.market_volume_ax)
+            data['per_sec_matched'].plot(ax = self.market_volume_ax)
         self.market_volume_canvas.draw()
 
     def draw_all_graphs(self, market_id):
