@@ -232,6 +232,7 @@ class MainWindow:
         data['increase_matched'] = data['total_matched'].diff()
         data['seconds_matched'] = data.index.to_series().diff() * 60
         data['per_sec_matched'] = data['increase_matched'] / data['seconds_matched']
+        data['mean_per_sec_matched'] = data['per_sec_matched'].rolling(window = 3).mean()
         self.market_volume_data = data
 
     def update_market_data(self, market_id):
@@ -287,7 +288,7 @@ class MainWindow:
             else:
                 data = data[data['inplay'] == False]
                 data = data.query(f"mins >= -{period}")
-            data['per_sec_matched'].plot(ax = self.market_volume_ax)
+            data['mean_per_sec_matched'].plot(ax = self.market_volume_ax)
         self.market_volume_canvas.draw()
 
     def draw_all_graphs(self, market_id):
