@@ -14,6 +14,7 @@ from models import Event, Market, Runner, MarketRunner
 
 # DB connection URL
 SQLALCHEMY_URL = 'postgresql://postgres:barnum@qnap:32768/betfairlogger'
+#SQLALCHEMY_URL = 'postgresql://postgres:barnum@localhost/betfairlogger'
 
 class RunnerInfo:
 
@@ -229,10 +230,11 @@ class MainWindow:
             ' order by mb.date_time'
         )
         data = pd.read_sql(query, db_engine, index_col = ['mins'])
-        data['increase_matched'] = data['total_matched'].diff()
-        data['seconds_matched'] = data.index.to_series().diff() * 60
-        data['per_sec_matched'] = data['increase_matched'] / data['seconds_matched']
-        data['mean_per_sec_matched'] = data['per_sec_matched'].rolling(window = 3).mean()
+        data['increase'] = data['total_matched'].diff()
+        data['secs'] = data.index.to_series().diff() * 60
+        data['rate'] = data['increase'] / data['secs']
+        data['rate_5'] = data['rate'].rolling(window = 5).mean()
+        data['rate_10'] = data['rate'].rolling(window = 10).mean()
         self.market_volume_data = data
 
     def update_market_data(self, market_id):
@@ -288,7 +290,7 @@ class MainWindow:
             else:
                 data = data[data['inplay'] == False]
                 data = data.query(f"mins >= -{period}")
-            data['mean_per_sec_matched'].plot(ax = self.market_volume_ax)
+            data[['rate', 'rate_10']].plot(ax = self.market_volume_ax)
         self.market_volume_canvas.draw()
 
     def draw_all_graphs(self, market_id):
