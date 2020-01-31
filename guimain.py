@@ -324,8 +324,10 @@ class MainWindow:
                 self.price_plot_ax.legend(loc = 'upper left')
                 for index, row in self.market_orders.iterrows():
                     if row['name'] in runners_selected:
-                        marker = 'v' if row['side'] == 'BACK' else '^'
-                        self.price_plot_ax.plot([index], [row['price_matched']], marker, markersize = 12, markerfacecolor = 'white', markeredgecolor = 'black')
+                        if row['side'] == 'BACK':
+                            self.price_plot_ax.plot([index], [row['price_matched']], 'v', markersize = 12, markerfacecolor = '#d0dfda', markeredgecolor = 'black')
+                        else:
+                            self.price_plot_ax.plot([index], [row['price_matched']], '^', markersize = 12, markerfacecolor = '#efcbde', markeredgecolor = 'black')
         self.price_plot_canvas.draw()
 
     def draw_all_graphs(self, market_id):
