@@ -36,6 +36,7 @@ class Market(Base):
     #last_prerace_book = relationship('MarketBook', foreign_keys=[last_prerace_book_id])
     last_inplay_book_id = Column(Integer, ForeignKey('market_book.id'), nullable=True, index = True)
     #last_inplay_book = relationship('MarketBook', foreign_keys=[last_inplay_book_id])
+    orders = relationship('MarketRunnerOrder', order_by='MarketRunnerOrder.placed_date', backref='market')
 
     @property
     def last_book(self):
@@ -85,6 +86,7 @@ class MarketRunner(Base):
     runner_id = Column(Integer, ForeignKey('runner.id'), nullable=False, index = True)
     sort_priority = Column(Integer, nullable=False)
     books = relationship('MarketRunnerBook', backref='market_runner')
+    orders = relationship('MarketRunnerOrder', order_by='MarketRunnerOrder.placed_date', backref='market_runner')
     #metadata
 
     @property
@@ -150,7 +152,6 @@ class MarketBook(Base):
     runners_voidable = Column(Boolean, nullable=False)
     version = Column(BigInteger, nullable=False)
     runners = relationship('MarketRunnerBook', backref='market_book')
-    #key_line_description
 
 class MarketRunnerBook(Base):
 
@@ -165,8 +166,23 @@ class MarketRunnerBook(Base):
     last_price_traded = Column(Float, nullable=True)
     total_matched = Column(Float, nullable=True)
     removal_date = Column(DateTime, nullable=True)
-    #starting_price
-    #exchange_prices
-    #orders
-    #matches
-    #matches_by_strategy
+    wom_back = Column(Float, nullable=True)
+    wom_lay = Column(Float, nullable=True)
+
+class MarketRunnerOrder(Base):
+
+    __tablename__ = 'market_runner_order'
+
+    id = Column(Integer, primary_key=True)
+    market_id = Column(Integer, ForeignKey('market.id'), nullable=False, index = True)
+    market_runner_id = Column(Integer, ForeignKey('market_runner.id'), nullable=False, index = True)
+    betfair_id = Column(String, nullable=False)
+    placed_date = Column(DateTime, nullable=False)
+    side = Column(String, nullable=False)
+    size = Column(Float, nullable=False)
+    price_requested = Column(Float, nullable=False)
+    matched_date = Column(DateTime, nullable=False)
+    price_matched = Column(Float, nullable=False)
+    profit = Column(Float, nullable=False)
+
+

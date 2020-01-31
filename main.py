@@ -7,13 +7,12 @@ import sqlalchemy as sql
 
 import betfairlightweight as bfl
 
-from models import Event, Runner, Market, MarketRunner, MarketBook, MarketRunnerBook
+from models import Event, Runner, Market, MarketRunner, MarketBook, MarketRunnerBook, MarketRunnerOrder
 
 # DB connection URL
 SQLALCHEMY_URL = 'postgresql://postgres:barnum@192.168.1.1:32768/betfairlogger'
 #SQLALCHEMY_URL = 'postgresql://postgres:barnum@qnap:32768/betfairlogger'
 #SQLALCHEMY_URL = 'postgresql://postgres:barnum@localhost/betfairlogger'
-
 
 
 def get_events(db_session, betfair_api, date):
@@ -26,7 +25,7 @@ def get_events(db_session, betfair_api, date):
             market_type_codes = ['WIN'],
             market_start_time = {
                 'from': date.strftime("%Y-%m-%dT%TZ"),
-                'to': (date + datetime.timedelta(days=1)).strftime("%Y-%m-%dT%TZ"),
+                'to': (date + datetime.timedelta(days = 1)).strftime("%Y-%m-%dT%TZ"),
             },
         )
     )
@@ -81,7 +80,7 @@ def get_markets(db_session, betfair_api, event):
                     name = bfl_runner.runner_name,
                 )
                 db_session.add(runner)
-            market_runner = db_session.query(MarketRunner).filter(MarketRunner.runner_id == runner.id).one_or_none()
+            market_runner = db_session.query(MarketRunner).filter(MarketRunner.market_id == market.id, MarketRunner.runner_id == runner.id).one_or_none()
             if not market_runner:
                 market_runner = MarketRunner(
                     market_id = market.id,
@@ -97,7 +96,12 @@ def get_market_book(db_session, betfair_api, market):
 
     market_book = None
     #print(f"  {datetime.datetime.now()}: Sending API request")
-    bfl_market_books = betfair_api.betting.list_market_book([market.betfair_id])
+    bfl_market_books = betfair_api.betting.list_market_book(
+        [market.betfair_id],
+        bfl.filters.price_projection(
+            price_data = bfl.filters.price_data(ex_best_offers = True)
+        )
+    )
     #print(f"  {datetime.datetime.now()}: API response received")
     if bfl_market_books:
         bfl_market_book = bfl_market_books[0]
@@ -130,6 +134,12 @@ def get_market_book(db_session, betfair_api, market):
                 if runner:
                     market_runner = db_session.query(MarketRunner).filter(MarketRunner.market_id == market_book.market_id, MarketRunner.runner_id == runner.id).one_or_none()
                     if market_runner:
+                        wom_back = None
+                        wom_lay = None
+                        if len(bfl_runner_book.ex.available_to_lay) == 3:
+                            wom_back = sum([price.size for price in bfl_runner_book.ex.available_to_lay])
+                        if len(bfl_runner_book.ex.available_to_back) == 3:
+                            wom_lay = sum([price.size for price in bfl_runner_book.ex.available_to_back])
                         market_runner_book = MarketRunnerBook(
                             market_book_id = market_book.id,
                             market_runner_id = market_runner.id,
@@ -138,7 +148,9 @@ def get_market_book(db_session, betfair_api, market):
                             adjustment_factor = bfl_runner_book.adjustment_factor,
                             last_price_traded = bfl_runner_book.last_price_traded,
                             total_matched = bfl_runner_book.total_matched,
-                            removal_date = bfl_runner_book.removal_date
+                            removal_date = bfl_runner_book.removal_date,
+                            wom_back = wom_back,
+                            wom_lay = wom_lay
                         )
                         db_session.add(market_runner_book)
             #print(f"  {datetime.datetime.now()}: Runner books created")
@@ -146,6 +158,39 @@ def get_market_book(db_session, betfair_api, market):
             #print(f"  {datetime.datetime.now()}: DB changes committed")
     return market_book
 
+def get_market_orders(db_session, betfair_api, market):
+
+    # Get settled orders
+    orders = []
+    bfl_result = betfair_api.betting.list_cleared_orders(
+        bet_status = 'SETTLED',
+        market_ids = [market.betfair_id]
+    )
+    for bfl_order in bfl_result.orders:
+
+        # Don't duplicate orders (just in case)
+        order = db_session.query(MarketRunnerOrder).filter(MarketRunnerOrder.betfair_id == bfl_order.bet_id).one_or_none()
+        if not order:
+            runner = db_session.query(Runner).filter(Runner.betfair_id == bfl_order.selection_id).one_or_none()
+            if runner:
+                market_runner = db_session.query(MarketRunner).filter(MarketRunner.market_id == market.id, MarketRunner.runner_id == runner.id).one_or_none()
+                if market_runner:
+                    order = MarketRunnerOrder(
+                        market_id = market.id,
+                        market_runner_id = market_runner.id,
+                        betfair_id = bfl_order.bet_id,
+                        placed_date = bfl_order.placed_date,
+                        side = bfl_order.side,
+                        size = bfl_order.size_settled,
+                        price_requested = bfl_order.price_requested,
+                        matched_date = bfl_order.last_matched_date,
+                        price_matched = bfl_order.price_matched,
+                        profit = bfl_order.profit,
+                    )
+                    db_session.add(order)
+                    orders.append(order)
+    db_session.commit()
+    return orders
 
 def log_markets(db_session, betfair_api, date):
 
@@ -204,8 +249,10 @@ def log_markets(db_session, betfair_api, date):
                         market.last_inplay_book_id = market_book.id
                     else:
                         market.last_prerace_book_id = market_book.id
-                db_session.commit()
-            #print(f"  {datetime.datetime.now()}: Last market book updated")
+                    db_session.commit()
+                elif market_book.status == 'CLOSED':
+                    orders = get_market_orders(db_session, betfair_api, market)
+                    print(f"{len(orders)} orders retrieved for {market.event.name} {market.name} {market.start_time}")
 
         # Pause for half a second
         sleep(0.5)
