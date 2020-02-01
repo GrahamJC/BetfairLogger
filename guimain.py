@@ -55,6 +55,7 @@ class MainWindow:
         self.create_widgets()
         self.year_combo.current(0)
         self.year_selected()
+        self.refresh_id = None
         #self.market_volume_data = None
         #self.market_data = None
         
@@ -89,7 +90,10 @@ class MainWindow:
     def market_selected(self, event = None):
         self.market_id = self.market_choices[self.market_combo.get()]
         self.update_runners(self.market_id)
-        self.refresh()
+        self.update_volume_data(self.market_id)
+        self.update_market_data(self.market_id)
+        self.update_info(self.market_id)
+        self.draw_all_graphs(self.market_id)
 
     def create_widgets(self):
 
@@ -213,17 +217,30 @@ class MainWindow:
 
     def auto_refresh(self):
         secs = self.option_refresh.get()
-        if secs:
-            self.refresh_frame.after(secs * 1000, self.refresh)
+        if secs == 0:
+            if self.refresh_id:
+                self.refresh_frame.after_cancel(self.refresh_id)
+                self.refresh_id = None
+        elif not self.refresh_id:
+            self.refresh_id = self.refresh_frame.after(secs * 1000, self.refresh)
 
     def refresh(self):
+        started = dt.datetime.now()
+        print(f"{dt.datetime.now()}: refresh() start")
         self.update_volume_data(self.market_id)
+        print(f"  {(dt.datetime.now() - started).total_seconds()}: update_volume_data()")
+        started = dt.datetime.now()
         self.update_market_data(self.market_id)
+        print(f"  {(dt.datetime.now() - started).total_seconds()}: update_market_data()")
+        started = dt.datetime.now()
         self.update_info(self.market_id)
+        print(f"  {(dt.datetime.now() - started).total_seconds()}: update_info()")
+        started = dt.datetime.now()
         self.draw_all_graphs(self.market_id)
+        print(f"  {(dt.datetime.now() - started).total_seconds()}: update_all_graphs()")
         secs = self.option_refresh.get()
         if secs:
-            self.refresh_frame.after(secs * 1000, self.refresh)
+            self.refresh_id = self.refresh_frame.after(secs * 1000, self.refresh)
 
     def update_info(self, market_id):
         market = self.db_session.query(Market).filter(Market.id == market_id).one_or_none()
@@ -299,27 +316,27 @@ class MainWindow:
         plot = self.option_plot.get()
         if plot == 'MarketVolume':
             data = self.market_volume_data
+            if period == 0:
+                data = data[data['inplay'] == True]
+            else:
+                data = data[data['inplay'] == False]
+                data = data.query(f"mins >= -{period}")
             if not data.empty:
+                data[['rate', 'rate_smooth']].plot(ax = self.info_plot_ax)
+        else:
+            data = self.market_data
+            runners_selected = []
+            for runner in self.runners:
+                if runner.selected:
+                    runners_selected.append(runner.name)
+            if runners_selected:
+                data = data.iloc[data.index.isin(runners_selected, level = 'name')]
                 if period == 0:
                     data = data[data['inplay'] == True]
                 else:
                     data = data[data['inplay'] == False]
                     data = data.query(f"mins >= -{period}")
-                data[['rate', 'rate_smooth']].plot(ax = self.info_plot_ax)
-        else:
-            data = self.market_data
-            if not data.empty:
-                runners_selected = []
-                for runner in self.runners:
-                    if runner.selected:
-                        runners_selected.append(runner.name)
-                if runners_selected:
-                    data = data.iloc[data.index.isin(runners_selected, level = 'name')]
-                    if period == 0:
-                        data = data[data['inplay'] == True]
-                    else:
-                        data = data[data['inplay'] == False]
-                        data = data.query(f"mins >= -{period}")
+                if not data.empty:
                     if plot == 'RelativeVolume':
                         data['percent'].unstack().plot(ax = self.info_plot_ax)
                     elif plot == 'WOM':
@@ -339,29 +356,29 @@ class MainWindow:
     def draw_price_graph(self, market_id):
         self.price_plot_ax.clear()
         data = self.market_data
-        if not data.empty:
-            runners_selected = []
-            for runner in self.runners:
-                if runner.selected:
-                    runners_selected.append(runner.name)
-            if runners_selected:
-                data = data.iloc[data.index.isin(runners_selected, level = 'name')]
-                period = self.option_period.get()
-                plot = self.option_plot.get()
-                scale = self.option_scale.get()
-                if period == 0:
-                    data = data[data['inplay'] == True]
-                    data = data[data['last_price_traded'] <= 25]
-                else:
-                    data = data[data['inplay'] == False]
-                    data = data.query(f"mins >= -{period}")
+        runners_selected = []
+        for runner in self.runners:
+            if runner.selected:
+                runners_selected.append(runner.name)
+        if runners_selected:
+            data = data.iloc[data.index.isin(runners_selected, level = 'name')]
+            period = self.option_period.get()
+            plot = self.option_plot.get()
+            scale = self.option_scale.get()
+            if period == 0:
+                data = data[data['inplay'] == True]
+                data = data[data['last_price_traded'] <= 25]
+            else:
+                data = data[data['inplay'] == False]
+                data = data.query(f"mins >= -{period}")
+            if not data.empty:
                 data['last_price_traded'].unstack().plot(ax = self.price_plot_ax, logy = (scale == 'Log'))
-                for index, row in self.market_orders.iterrows():
-                    if row['name'] in runners_selected:
-                        if row['side'] == 'BACK':
-                            self.price_plot_ax.plot([index], [row['price_matched']], 'v', markersize = 12, markerfacecolor = '#d0dfda', markeredgecolor = 'black')
-                        else:
-                            self.price_plot_ax.plot([index], [row['price_matched']], '^', markersize = 12, markerfacecolor = '#efcbde', markeredgecolor = 'black')
+            for index, row in self.market_orders.iterrows():
+                if row['name'] in runners_selected:
+                    if row['side'] == 'BACK':
+                        self.price_plot_ax.plot([index], [row['price_matched']], 'v', markersize = 12, markerfacecolor = '#d0dfda', markeredgecolor = 'black')
+                    else:
+                        self.price_plot_ax.plot([index], [row['price_matched']], '^', markersize = 12, markerfacecolor = '#efcbde', markeredgecolor = 'black')
         self.draw_plot_hline(self.price_plot_ax, 2)
         self.draw_plot_hline(self.price_plot_ax, 3)
         self.draw_plot_hline(self.price_plot_ax, 4)
