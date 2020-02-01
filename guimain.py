@@ -39,6 +39,9 @@ class MainWindow:
     def __init__(self, master, db_session):
         self.master = master
         self.db_session = db_session
+        self.info_total = StringVar()
+        self.info_prerace = StringVar()
+        self.info_inplay = StringVar()
         self.option_period = IntVar()
         self.option_period.set(60)
         self.option_plot = StringVar()
@@ -85,13 +88,12 @@ class MainWindow:
 
     def market_selected(self, event = None):
         self.market_id = self.market_choices[self.market_combo.get()]
-        self.update_volume_data(self.market_id)
         self.update_runners(self.market_id)
-        self.update_market_data(self.market_id)
-        self.draw_all_graphs(self.market_id)
+        self.refresh()
 
     def create_widgets(self):
 
+        # Date and market selection
         self.select_frame = Frame(self.master)
         Label(self.select_frame, text = 'Day: ').pack(side = LEFT, padx = 5, pady = 5)
         self.day_combo = Combobox(self.select_frame, state = 'readonly', width = 5)
@@ -128,6 +130,7 @@ class MainWindow:
         Radiobutton(self.period_frame, text = '30 mins', variable = self.option_period, value = 30, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = '10 mins', variable = self.option_period, value = 10, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = '5 mins', variable = self.option_period, value = 5, command = self.update_period).pack(side = TOP, anchor = W)
+        Radiobutton(self.period_frame, text = '2.5 mins', variable = self.option_period, value = 2.5, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = 'Inplay', variable = self.option_period, value = 0, command = self.update_period).pack(side = TOP, anchor = W)
 
         # Plot variable
@@ -152,6 +155,16 @@ class MainWindow:
         Radiobutton(self.refresh_frame, text = '15 seconds', variable = self.option_refresh, value = 15, command = self.auto_refresh).pack(side = TOP, anchor = W)
         Radiobutton(self.refresh_frame, text = '30 seconds', variable = self.option_refresh, value = 30, command = self.auto_refresh).pack(side = TOP, anchor = W)
         Radiobutton(self.refresh_frame, text = '60 seconds', variable = self.option_refresh, value = 60, command = self.auto_refresh).pack(side = TOP, anchor = W)
+
+        # Market information
+        self.info_frame = Frame(self.master)
+        self.info_frame.pack(side = TOP, fill = X, expand = False)
+        Label(self.info_frame, text = 'Total: ').pack(side = LEFT, padx = 5, pady = 5)
+        Label(self.info_frame, textvariable = self.info_total).pack(side = LEFT, padx = 5, pady = 5)
+        Label(self.info_frame, text = 'Pre-race: ').pack(side = LEFT, padx = 5, pady = 5)
+        Label(self.info_frame, textvariable = self.info_prerace).pack(side = LEFT, padx = 5, pady = 5)
+        Label(self.info_frame, text = 'Inplay: ').pack(side = LEFT, padx = 5, pady = 5)
+        Label(self.info_frame, textvariable = self.info_inplay).pack(side = LEFT, padx = 5, pady = 5)
 
         # Plots
         self.plot_frame = Frame(self.master)
@@ -206,11 +219,24 @@ class MainWindow:
     def refresh(self):
         self.update_volume_data(self.market_id)
         self.update_market_data(self.market_id)
+        self.update_info(self.market_id)
         self.draw_all_graphs(self.market_id)
         secs = self.option_refresh.get()
         if secs:
             self.refresh_frame.after(secs * 1000, self.refresh)
 
+    def update_info(self, market_id):
+        market = self.db_session.query(Market).filter(Market.id == market_id).one_or_none()
+        if market:
+            book = market.last_prerace_book
+            prerace = book.total_matched if book else 0
+            book = market.last_inplay_book
+            total = book.total_matched if book else 0
+            inplay = total - prerace
+            self.info_total.set(f"£{round(total)}")
+            self.info_prerace.set(f"£{round(prerace)}")
+            self.info_inplay.set(f"£{round(inplay)}")
+            
     def update_info_plot(self):
         self.draw_info_graph(self.market_id)
 
@@ -297,9 +323,18 @@ class MainWindow:
                     if plot == 'RelativeVolume':
                         data['percent'].unstack().plot(ax = self.info_plot_ax)
                     elif plot == 'WOM':
-                        data['wom'].unstack().plot(ax = self.info_plot_ax)
-                self.info_plot_ax.legend(loc = 'upper left')
+                        data['wom_smooth'] = data['wom'].groupby('name').rolling(window = 5).mean().reset_index(level = 0, drop = True)
+                        data['wom_smooth'].unstack().plot(ax = self.info_plot_ax)
+                        min, max = self.info_plot_ax.get_ylim()
+                        self.info_plot_ax.axhspan(min, 50, color = '#efcbde')
+                        self.info_plot_ax.axhspan(50, max, color = '#d0dfda')
+        self.info_plot_ax.legend(loc = 'upper left')
         self.info_plot_canvas.draw()
+
+    def draw_plot_hline(self, ax, y, style = '--', color = '#cccccc'):
+        min, max = ax.get_ylim()
+        if min <=  y and max >= y:
+            ax.axhline(y = y, linestyle = style, color = color)
 
     def draw_price_graph(self, market_id):
         self.price_plot_ax.clear()
@@ -321,13 +356,18 @@ class MainWindow:
                     data = data[data['inplay'] == False]
                     data = data.query(f"mins >= -{period}")
                 data['last_price_traded'].unstack().plot(ax = self.price_plot_ax, logy = (scale == 'Log'))
-                self.price_plot_ax.legend(loc = 'upper left')
                 for index, row in self.market_orders.iterrows():
                     if row['name'] in runners_selected:
                         if row['side'] == 'BACK':
                             self.price_plot_ax.plot([index], [row['price_matched']], 'v', markersize = 12, markerfacecolor = '#d0dfda', markeredgecolor = 'black')
                         else:
                             self.price_plot_ax.plot([index], [row['price_matched']], '^', markersize = 12, markerfacecolor = '#efcbde', markeredgecolor = 'black')
+        self.draw_plot_hline(self.price_plot_ax, 2)
+        self.draw_plot_hline(self.price_plot_ax, 3)
+        self.draw_plot_hline(self.price_plot_ax, 4)
+        self.draw_plot_hline(self.price_plot_ax, 6)
+        self.draw_plot_hline(self.price_plot_ax, 10)
+        self.price_plot_ax.legend(loc = 'upper left')
         self.price_plot_canvas.draw()
 
     def draw_all_graphs(self, market_id):
