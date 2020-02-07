@@ -42,8 +42,9 @@ class MainWindow:
         self.info_total = StringVar()
         self.info_prerace = StringVar()
         self.info_inplay = StringVar()
+        self.info_profit = StringVar()
         self.option_period = IntVar()
-        self.option_period.set(60)
+        self.option_period.set(240)
         self.option_plot = StringVar()
         self.option_plot.set('MarketVolume')
         self.option_scale = StringVar()
@@ -89,6 +90,7 @@ class MainWindow:
 
     def market_selected(self, event = None):
         self.market_id = self.market_choices[self.market_combo.get()]
+        self.update_notes(self.market_id)
         self.update_runners(self.market_id)
         self.update_volume_data(self.market_id)
         self.update_market_data(self.market_id)
@@ -99,19 +101,19 @@ class MainWindow:
 
         # Date and market selection
         self.select_frame = Frame(self.master)
-        Label(self.select_frame, text = 'Day: ').pack(side = LEFT, padx = 5, pady = 5)
-        self.day_combo = Combobox(self.select_frame, state = 'readonly', width = 5)
-        self.day_combo.pack(side = LEFT, padx = 5, pady = 5)
-        self.day_combo.bind('<<ComboboxSelected>>', self.day_selected)
-        Label(self.select_frame, text = 'Month: ').pack(side = LEFT, padx = 5, pady = 5)
-        self.month_combo = Combobox(self.select_frame, state = 'readonly', width = 5)
-        self.month_combo.pack(side = LEFT, padx = 5, pady = 5)
-        self.month_combo.bind('<<ComboboxSelected>>', self.month_selected)
         Label(self.select_frame, text = 'Year: ').pack(side = LEFT, padx = 5, pady = 5)
         years = [int(row[0]) for row in self.db_session.query("distinct date_part('year', start_time) from market order by date_part('year', start_time) desc")]
         self.year_combo = Combobox(self.select_frame, state = 'readonly', width = 5, values = years)
         self.year_combo.pack(side = LEFT, padx = 5, pady = 5)
         self.year_combo.bind('<<ComboboxSelected>>', self.year_selected)
+        Label(self.select_frame, text = 'Month: ').pack(side = LEFT, padx = 5, pady = 5)
+        self.month_combo = Combobox(self.select_frame, state = 'readonly', width = 5)
+        self.month_combo.pack(side = LEFT, padx = 5, pady = 5)
+        self.month_combo.bind('<<ComboboxSelected>>', self.month_selected)
+        Label(self.select_frame, text = 'Day: ').pack(side = LEFT, padx = 5, pady = 5)
+        self.day_combo = Combobox(self.select_frame, state = 'readonly', width = 5)
+        self.day_combo.pack(side = LEFT, padx = 5, pady = 5)
+        self.day_combo.bind('<<ComboboxSelected>>', self.day_selected)
         Label(self.select_frame, text = 'Select event: ').pack(side = LEFT, padx = 5, pady = 5)
         self.market_combo = Combobox(self.select_frame, state = 'readonly')
         self.market_combo.pack(side = LEFT, fill = X, expand = True, padx = 5, pady = 5)
@@ -122,14 +124,27 @@ class MainWindow:
         self.options_frame = Frame(self.master, width = 150)
         self.options_frame.pack(side = LEFT, fill = Y, expand = False)
 
+        # Market information
+        frame = LabelFrame(self.options_frame, text = 'Information')
+        Label(frame, text = 'Total: ').grid(row = 0, column = 0, padx = 2, pady = 5, sticky = W)
+        Label(frame, textvariable = self.info_total).grid(row = 0, column = 1, padx = 5, pady = 2, sticky = W)
+        Label(frame, text = 'Pre-race: ').grid(row = 1, column = 0, padx = 5, pady = 2, sticky = W)
+        Label(frame, textvariable = self.info_prerace).grid(row = 1, column = 1, padx = 5, pady = 2, sticky = W)
+        Label(frame, text = 'Inplay: ').grid(row = 2, column = 0, padx = 5, pady = 2, sticky = W)
+        Label(frame, textvariable = self.info_inplay).grid(row = 2, column = 1, padx = 5, pady = 2, sticky = W)
+        Label(frame, text = 'Profit: ').grid(row = 3, column = 0, padx = 5, pady = 2, sticky = W)
+        Label(frame, textvariable = self.info_profit).grid(row = 3, column = 1, padx = 5, pady = 2, sticky = W)
+        frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
+
         # Runners
         self.runner_frame = LabelFrame(self.options_frame, text = 'Runners')
         self.runner_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
-        Label(self.runner_frame, text = 'Select event').pack(side = TOP)
+        #Label(self.runner_frame, text = 'Select event').pack(side = TOP)
 
         # Period
         self.period_frame = LabelFrame(self.options_frame, text = 'Period')
         self.period_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
+        Radiobutton(self.period_frame, text = '4 hrs', variable = self.option_period, value = 240, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = '60 mins', variable = self.option_period, value = 60, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = '30 mins', variable = self.option_period, value = 30, command = self.update_period).pack(side = TOP, anchor = W)
         Radiobutton(self.period_frame, text = '10 mins', variable = self.option_period, value = 10, command = self.update_period).pack(side = TOP, anchor = W)
@@ -151,28 +166,26 @@ class MainWindow:
         Radiobutton(self.scale_frame, text = 'Logarithmic', variable = self.option_scale, value = 'Log', command = self.update_price_plot).pack(side = TOP, anchor = W)
 
         # Refresh
-        self.refresh_frame = LabelFrame(self.options_frame, text = 'Refresh')
-        self.refresh_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
-        Radiobutton(self.refresh_frame, text = 'disable', variable = self.option_refresh, value = 0, command = self.auto_refresh).pack(side = TOP, anchor = W)
-        Radiobutton(self.refresh_frame, text = '1 second', variable = self.option_refresh, value = 1, command = self.auto_refresh).pack(side = TOP, anchor = W)
-        Radiobutton(self.refresh_frame, text = '5 seconds', variable = self.option_refresh, value = 5, command = self.auto_refresh).pack(side = TOP, anchor = W)
-        Radiobutton(self.refresh_frame, text = '15 seconds', variable = self.option_refresh, value = 15, command = self.auto_refresh).pack(side = TOP, anchor = W)
-        Radiobutton(self.refresh_frame, text = '30 seconds', variable = self.option_refresh, value = 30, command = self.auto_refresh).pack(side = TOP, anchor = W)
-        Radiobutton(self.refresh_frame, text = '60 seconds', variable = self.option_refresh, value = 60, command = self.auto_refresh).pack(side = TOP, anchor = W)
+        frame = LabelFrame(self.options_frame, text = 'Refresh')
+        frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
+        Radiobutton(frame, text = 'disable', variable = self.option_refresh, value = 0, command = self.auto_refresh).pack(side = TOP, anchor = W)
+        Radiobutton(frame, text = '1 second', variable = self.option_refresh, value = 1, command = self.auto_refresh).pack(side = TOP, anchor = W)
+        Radiobutton(frame, text = '5 seconds', variable = self.option_refresh, value = 5, command = self.auto_refresh).pack(side = TOP, anchor = W)
+        Radiobutton(frame, text = '15 seconds', variable = self.option_refresh, value = 15, command = self.auto_refresh).pack(side = TOP, anchor = W)
+        Radiobutton(frame, text = '30 seconds', variable = self.option_refresh, value = 30, command = self.auto_refresh).pack(side = TOP, anchor = W)
+        Radiobutton(frame, text = '60 seconds', variable = self.option_refresh, value = 60, command = self.auto_refresh).pack(side = TOP, anchor = W)
+        Button(frame, text = 'Now', command = self.refresh).pack(side = TOP, anchor = SE, padx = 5, pady = 5)
 
-        # Market information
-        self.info_frame = Frame(self.master)
-        self.info_frame.pack(side = TOP, fill = X, expand = False)
-        Label(self.info_frame, text = 'Total: ').pack(side = LEFT, padx = 5, pady = 5)
-        Label(self.info_frame, textvariable = self.info_total).pack(side = LEFT, padx = 5, pady = 5)
-        Label(self.info_frame, text = 'Pre-race: ').pack(side = LEFT, padx = 5, pady = 5)
-        Label(self.info_frame, textvariable = self.info_prerace).pack(side = LEFT, padx = 5, pady = 5)
-        Label(self.info_frame, text = 'Inplay: ').pack(side = LEFT, padx = 5, pady = 5)
-        Label(self.info_frame, textvariable = self.info_inplay).pack(side = LEFT, padx = 5, pady = 5)
+        # Notes
+        frame = LabelFrame(self.master, text = 'Notes')
+        frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
+        self.notes_text = Text(frame, width = 32, height = 5)
+        self.notes_text.pack(side = TOP, fill = X, padx = 5, pady = 5)
+        Button(frame, text = 'Save', command = self.save_notes).pack(side = TOP, anchor = SE, padx = 5, pady = 5)
 
         # Plots
         self.plot_frame = Frame(self.master)
-        self.plot_frame.pack(side = LEFT, fill = BOTH, expand = True)
+        self.plot_frame.pack(side = TOP, fill = BOTH, expand = True)
         self.plot_frame.grid_rowconfigure(0, weight = 1)
         self.plot_frame.grid_rowconfigure(1, weight = 1)
         self.plot_frame.grid_rowconfigure(2, weight = 0)
@@ -199,6 +212,18 @@ class MainWindow:
         self.price_plot_toolbar_frame.grid(row = 2, column = 0)
         self.price_plot_toolbar.update()
 
+    def update_notes(self, market_id):
+        market = self.db_session.query(Market).filter(Market.id == market_id).one_or_none()
+        if market:
+            self.notes_text.delete('1.0', END)
+            self.notes_text.insert(END, market.notes if market.notes else '')
+
+    def save_notes(self):
+        market = self.db_session.query(Market).filter(Market.id == self.market_id).one_or_none()
+        if market:
+            market.notes = self.notes_text.get('1.0', END)
+            db_session.commit()
+
     def update_runners(self, market_id):
         self.runners = [
             RunnerInfo(r.id, r.runner.name, r.starting_price)
@@ -219,40 +244,40 @@ class MainWindow:
         secs = self.option_refresh.get()
         if secs == 0:
             if self.refresh_id:
-                self.refresh_frame.after_cancel(self.refresh_id)
+                self.master.after_cancel(self.refresh_id)
                 self.refresh_id = None
         elif not self.refresh_id:
-            self.refresh_id = self.refresh_frame.after(secs * 1000, self.refresh)
+            self.refresh_id = self.master.after(secs * 1000, self.refresh)
 
     def refresh(self):
-        started = dt.datetime.now()
-        print(f"{dt.datetime.now()}: refresh() start")
+        if self.refresh_id:
+            self.master.after_cancel(self.refresh_id)
+            self.refresh_id = None
         self.update_volume_data(self.market_id)
-        print(f"  {(dt.datetime.now() - started).total_seconds()}: update_volume_data()")
-        started = dt.datetime.now()
         self.update_market_data(self.market_id)
-        print(f"  {(dt.datetime.now() - started).total_seconds()}: update_market_data()")
-        started = dt.datetime.now()
         self.update_info(self.market_id)
-        print(f"  {(dt.datetime.now() - started).total_seconds()}: update_info()")
-        started = dt.datetime.now()
         self.draw_all_graphs(self.market_id)
-        print(f"  {(dt.datetime.now() - started).total_seconds()}: update_all_graphs()")
         secs = self.option_refresh.get()
         if secs:
-            self.refresh_id = self.refresh_frame.after(secs * 1000, self.refresh)
+            self.refresh_id = self.master.after(secs * 1000, self.refresh)
 
     def update_info(self, market_id):
         market = self.db_session.query(Market).filter(Market.id == market_id).one_or_none()
         if market:
-            book = market.last_prerace_book
-            prerace = book.total_matched if book else 0
             book = market.last_inplay_book
             total = book.total_matched if book else 0
+            book = market.last_prerace_book
+            prerace = book.total_matched if book else 0
+            if total == 0:
+                total = prerace
             inplay = total - prerace
             self.info_total.set(f"£{round(total)}")
             self.info_prerace.set(f"£{round(prerace)}")
             self.info_inplay.set(f"£{round(inplay)}")
+            profit = 0
+            for order in market.orders:
+                profit += order.profit
+            self.info_profit.set(f"£{round(profit, 2)}")
             
     def update_info_plot(self):
         self.draw_info_graph(self.market_id)
@@ -377,8 +402,10 @@ class MainWindow:
                 if row['name'] in runners_selected:
                     if row['side'] == 'BACK':
                         self.price_plot_ax.plot([index], [row['price_matched']], 'v', markersize = 12, markerfacecolor = '#d0dfda', markeredgecolor = 'black')
+                        self.price_plot_ax.annotate(f"{round(row['size'])}", xy = (index, row['price_matched']), textcoords = 'offset pixels', xytext = (-10, 15))
                     else:
                         self.price_plot_ax.plot([index], [row['price_matched']], '^', markersize = 12, markerfacecolor = '#efcbde', markeredgecolor = 'black')
+                        self.price_plot_ax.annotate(f"{round(row['size'])}", xy = (index, row['price_matched']), textcoords = 'offset pixels', xytext = (-10, -30))
         self.draw_plot_hline(self.price_plot_ax, 2)
         self.draw_plot_hline(self.price_plot_ax, 3)
         self.draw_plot_hline(self.price_plot_ax, 4)

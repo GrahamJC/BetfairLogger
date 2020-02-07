@@ -236,6 +236,10 @@ def log_markets(db_session, betfair_api, date):
                 # Update market if less than 60 mins until start and more than 60 seconds since last update
                 elif (secs_to_start <= 3600) and (secs_since_last_poll >= 60):
                     update_markets.append(market)
+                
+                # Update market if less than 4 hrs until start and more than 5 mins since last update
+                elif (secs_to_start <= 14400) and (secs_since_last_poll >= 300):
+                    update_markets.append(market)
 
         # Update markets (this could be done in a single API call for multiple markets but
         # that could lead to complications with amount of data and open vs closed markets)
@@ -283,9 +287,9 @@ Session = sql.orm.sessionmaker(bind=db_engine)
 while True:
 
     try:
-        # Wait until 10am
+        # Wait until 8am
         today = datetime.date.today()
-        wait_until(datetime.datetime(today.year, today.month, today.day, 10, 0, 0))
+        wait_until(datetime.datetime(today.year, today.month, today.day, 8, 0, 0))
 
         # Create DB session
         db_session = Session()
@@ -315,9 +319,9 @@ while True:
         print('DB session closed')
         db_session = None
 
-        # Wait until 10am tomorrow
+        # Wait until 8am tomorrow
         tomorrow = today + datetime.timedelta(days = 1)
-        wait_until(datetime.datetime(tomorrow.year, tomorrow.month, tomorrow.day,10, 0, 0))
+        wait_until(datetime.datetime(tomorrow.year, tomorrow.month, tomorrow.day,8, 0, 0))
 
     except:
         traceback.print_exc()

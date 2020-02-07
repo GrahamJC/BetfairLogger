@@ -28,14 +28,12 @@ class Market(Base):
     name = Column(String, nullable=False)
     start_time = Column(DateTime, nullable=False)
     total_matched = Column(Float, nullable=False)
+    notes = Column(String, nullable = True)
     runners = relationship('MarketRunner', order_by='MarketRunner.sort_priority', backref='market')
     books = relationship('MarketBook', primaryjoin='MarketBook.market_id==Market.id', order_by='MarketBook.date_time', backref='market')
     last_book_id = Column(Integer, ForeignKey('market_book.id'), nullable=True, index = True)
-    #last_book = relationship('MarketBook', foreign_keys=[last_book_id])
     last_prerace_book_id = Column(Integer, ForeignKey('market_book.id'), nullable=True, index = True)
-    #last_prerace_book = relationship('MarketBook', foreign_keys=[last_prerace_book_id])
     last_inplay_book_id = Column(Integer, ForeignKey('market_book.id'), nullable=True, index = True)
-    #last_inplay_book = relationship('MarketBook', foreign_keys=[last_inplay_book_id])
     orders = relationship('MarketRunnerOrder', order_by='MarketRunnerOrder.placed_date', backref='market')
 
     @property
@@ -123,8 +121,6 @@ class MarketRunner(Base):
         )
     @property
     def starting_price(self):
-        #session = Session.object_session(self)
-        #last_prerace_book = session.query(MarketRunnerBook).filter(MarketRunnerBook.market_runner_id == self.id, MarketRunnerBook.market_book_id == self.market.last_prerace_book_id).one_or_none()
         last_prerace_book = self.last_prerace_book
         return last_prerace_book.last_price_traded if last_prerace_book else None
 
