@@ -193,7 +193,6 @@ class MainWindow:
 
         # Information plot
         self.info_plot_figure = matplotlib.figure.Figure(figsize = [10, 2])
-        self.info_plot_ax = self.info_plot_figure.add_subplot()
         self.info_plot_canvas = FigureCanvasTkAgg(self.info_plot_figure, master = self.plot_frame)
         self.info_plot_widget = self.info_plot_canvas.get_tk_widget()
         self.info_plot_widget.grid(row = 0, column = 0, sticky = NSEW)
@@ -201,7 +200,6 @@ class MainWindow:
 
         # Price plot
         self.price_plot_figure = matplotlib.figure.Figure(figsize = [10, 8])
-        self.price_plot_ax = self.price_plot_figure.add_subplot()
         self.price_plot_canvas = FigureCanvasTkAgg(self.price_plot_figure, master = self.plot_frame)
         self.price_plot_widget = self.price_plot_canvas.get_tk_widget()
         self.price_plot_widget.grid(row = 1, column = 0, sticky = NSEW)
@@ -335,8 +333,14 @@ class MainWindow:
         data = pd.read_sql(query, db_engine, index_col = ['mins'])
         self.market_orders = data
 
+    def draw_plot_hline(self, ax, y, style = '--', color = '#cccccc'):
+        min, max = ax.get_ylim()
+        if min <=  y and max >= y:
+            ax.axhline(y = y, linestyle = style, color = color)
+
     def draw_info_graph(self, market_id):
-        self.info_plot_ax.clear()
+        self.info_plot_figure.clf()
+        ax = self.info_plot_figure.add_subplot()
         period = self.option_period.get()
         plot = self.option_plot.get()
         if plot == 'MarketVolume':
@@ -347,7 +351,9 @@ class MainWindow:
                 data = data[data['inplay'] == False]
                 data = data.query(f"mins >= -{period}")
             if not data.empty:
-                data[['rate', 'rate_smooth']].plot(ax = self.info_plot_ax)
+                data[['rate', 'rate_smooth', 'total_matched']].plot(ax = ax, secondary_y = ['total_matched'])
+                self.draw_plot_hline(ax, 1000)
+                self.draw_plot_hline(ax, 2500)
         else:
             data = self.market_data
             runners_selected = []
@@ -363,23 +369,19 @@ class MainWindow:
                     data = data.query(f"mins >= -{period}")
                 if not data.empty:
                     if plot == 'RelativeVolume':
-                        data['percent'].unstack().plot(ax = self.info_plot_ax)
+                        data['percent'].unstack().plot(ax = ax)
                     elif plot == 'WOM':
                         data['wom_smooth'] = data['wom'].groupby('name').rolling(window = 5).mean().reset_index(level = 0, drop = True)
-                        data['wom_smooth'].unstack().plot(ax = self.info_plot_ax)
-                        min, max = self.info_plot_ax.get_ylim()
-                        self.info_plot_ax.axhspan(min, 50, color = '#efcbde')
-                        self.info_plot_ax.axhspan(50, max, color = '#d0dfda')
-        self.info_plot_ax.legend(loc = 'upper left')
+                        data['wom_smooth'].unstack().plot(ax = ax)
+                        min, max = ax.get_ylim()
+                        ax.axhspan(min, 50, color = '#efcbde')
+                        ax.axhspan(50, max, color = '#d0dfda')
+        ax.legend(loc = 'upper left')
         self.info_plot_canvas.draw()
 
-    def draw_plot_hline(self, ax, y, style = '--', color = '#cccccc'):
-        min, max = ax.get_ylim()
-        if min <=  y and max >= y:
-            ax.axhline(y = y, linestyle = style, color = color)
-
     def draw_price_graph(self, market_id):
-        self.price_plot_ax.clear()
+        self.price_plot_figure.clf()
+        ax = self.price_plot_figure.add_subplot()
         data = self.market_data
         runners_selected = []
         for runner in self.runners:
@@ -397,21 +399,21 @@ class MainWindow:
                 data = data[data['inplay'] == False]
                 data = data.query(f"mins >= -{period}")
             if not data.empty:
-                data['last_price_traded'].unstack().plot(ax = self.price_plot_ax, logy = (scale == 'Log'))
+                data['last_price_traded'].unstack().plot(ax = ax, logy = (scale == 'Log'))
             for index, row in self.market_orders.iterrows():
                 if row['name'] in runners_selected:
                     if row['side'] == 'BACK':
-                        self.price_plot_ax.plot([index], [row['price_matched']], 'v', markersize = 12, markerfacecolor = '#d0dfda', markeredgecolor = 'black')
-                        self.price_plot_ax.annotate(f"{round(row['size'])}", xy = (index, row['price_matched']), textcoords = 'offset pixels', xytext = (-10, 15))
+                        ax.plot([index], [row['price_matched']], 'v', markersize = 12, markerfacecolor = '#d0dfda', markeredgecolor = 'black')
+                        ax.annotate(f"{round(row['size'])}", xy = (index, row['price_matched']), textcoords = 'offset pixels', xytext = (-8, 12))
                     else:
-                        self.price_plot_ax.plot([index], [row['price_matched']], '^', markersize = 12, markerfacecolor = '#efcbde', markeredgecolor = 'black')
-                        self.price_plot_ax.annotate(f"{round(row['size'])}", xy = (index, row['price_matched']), textcoords = 'offset pixels', xytext = (-10, -30))
-        self.draw_plot_hline(self.price_plot_ax, 2)
-        self.draw_plot_hline(self.price_plot_ax, 3)
-        self.draw_plot_hline(self.price_plot_ax, 4)
-        self.draw_plot_hline(self.price_plot_ax, 6)
-        self.draw_plot_hline(self.price_plot_ax, 10)
-        self.price_plot_ax.legend(loc = 'upper left')
+                        ax.plot([index], [row['price_matched']], '^', markersize = 12, markerfacecolor = '#efcbde', markeredgecolor = 'black')
+                        ax.annotate(f"{round(row['size'])}", xy = (index, row['price_matched']), textcoords = 'offset pixels', xytext = (-7, -25))
+        self.draw_plot_hline(ax, 2)
+        self.draw_plot_hline(ax, 3)
+        self.draw_plot_hline(ax, 4)
+        self.draw_plot_hline(ax, 6)
+        self.draw_plot_hline(ax, 10)
+        ax.legend(loc = 'upper left')
         self.price_plot_canvas.draw()
 
     def draw_all_graphs(self, market_id):
