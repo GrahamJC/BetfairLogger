@@ -122,7 +122,8 @@ class MarketRunner(Base):
     @property
     def starting_price(self):
         last_prerace_book = self.last_prerace_book
-        return last_prerace_book.last_price_traded if last_prerace_book else None
+        result = last_prerace_book.last_price_traded if last_prerace_book else None
+        return result or 1000
 
 
 class MarketBook(Base):
@@ -162,7 +163,9 @@ class MarketRunnerBook(Base):
     last_price_traded = Column(Float, nullable=True)
     total_matched = Column(Float, nullable=True)
     removal_date = Column(DateTime, nullable=True)
+    back_price = Column(Float, nullable=True)
     wom_back = Column(Float, nullable=True)
+    lay_price = Column(Float, nullable=True)
     wom_lay = Column(Float, nullable=True)
 
 class MarketRunnerOrder(Base):

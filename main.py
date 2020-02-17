@@ -99,7 +99,8 @@ def get_market_book(db_session, betfair_api, market):
     bfl_market_books = betfair_api.betting.list_market_book(
         [market.betfair_id],
         bfl.filters.price_projection(
-            price_data = bfl.filters.price_data(ex_best_offers = True)
+            price_data = bfl.filters.price_data(ex_best_offers = True),
+            virtualise = True,
         )
     )
     #print(f"  {datetime.datetime.now()}: API response received")
@@ -134,11 +135,15 @@ def get_market_book(db_session, betfair_api, market):
                 if runner:
                     market_runner = db_session.query(MarketRunner).filter(MarketRunner.market_id == market_book.market_id, MarketRunner.runner_id == runner.id).one_or_none()
                     if market_runner:
+                        back_price = None
                         wom_back = None
+                        lay_price = None
                         wom_lay = None
-                        if len(bfl_runner_book.ex.available_to_lay) == 3:
+                        if len(bfl_runner_book.ex.available_to_lay) > 0:
+                            lay_price = bfl_runner_book.ex.available_to_lay[0].price
                             wom_back = sum([price.size for price in bfl_runner_book.ex.available_to_lay])
-                        if len(bfl_runner_book.ex.available_to_back) == 3:
+                        if len(bfl_runner_book.ex.available_to_back) > 0:
+                            back_price = bfl_runner_book.ex.available_to_back[0].price
                             wom_lay = sum([price.size for price in bfl_runner_book.ex.available_to_back])
                         market_runner_book = MarketRunnerBook(
                             market_book_id = market_book.id,
@@ -149,8 +154,10 @@ def get_market_book(db_session, betfair_api, market):
                             last_price_traded = bfl_runner_book.last_price_traded,
                             total_matched = bfl_runner_book.total_matched,
                             removal_date = bfl_runner_book.removal_date,
+                            back_price = back_price,
                             wom_back = wom_back,
-                            wom_lay = wom_lay
+                            lay_price = lay_price,
+                            wom_lay = wom_lay,
                         )
                         db_session.add(market_runner_book)
             #print(f"  {datetime.datetime.now()}: Runner books created")

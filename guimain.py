@@ -1,4 +1,5 @@
 import datetime as dt
+import time as tm
 
 from tkinter import *
 from tkinter.ttk import *
@@ -7,7 +8,6 @@ import numpy as np
 import pandas as pd
 import sqlalchemy as sa
 import matplotlib
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
 from models import Event, Market, Runner, MarketRunner
@@ -15,13 +15,15 @@ from models import Event, Market, Runner, MarketRunner
 # DB connection URL
 SQLALCHEMY_URL = 'postgresql://postgres:barnum@qnap:32768/betfairlogger'
 #SQLALCHEMY_URL = 'postgresql://postgres:barnum@localhost/betfairlogger'
+#SQLALCHEMY_URL = 'postgresql://graham@gc-postgresql:CK6Z9wC3x@gc-postgresql.postgres.database.azure.com/betfairlogger'
 
 class RunnerInfo:
 
-    def __init__(self, id, name, price, selected = False):
+    def __init__(self, id, name, sort_priority, starting_price, selected = False):
         self.id = id
         self.name = name
-        self.price = price
+        self.sort_priority = sort_priority
+        self.starting_price = starting_price
         self._selected = BooleanVar()
         self._selected.set(selected)
 
@@ -47,8 +49,10 @@ class MainWindow:
         self.option_period.set(240)
         self.option_plot = StringVar()
         self.option_plot.set('MarketVolume')
+        self.option_price = StringVar()
+        self.option_price.set('Spread')
         self.option_scale = StringVar()
-        self.option_scale.set('Lin')
+        self.option_scale.set('Log')
         self.option_update_auto = BooleanVar()
         self.option_update_auto.set(False)
         self.option_refresh = IntVar()
@@ -57,8 +61,6 @@ class MainWindow:
         self.year_combo.current(0)
         self.year_selected()
         self.refresh_id = None
-        #self.market_volume_data = None
-        #self.market_data = None
         
     def year_selected(self, event = None):
         year = int(self.year_combo.get())
@@ -90,12 +92,24 @@ class MainWindow:
 
     def market_selected(self, event = None):
         self.market_id = self.market_choices[self.market_combo.get()]
+        #start_time = tm.time()
         self.update_notes(self.market_id)
+        #print(f"update_notes: {tm.time() - start_time}")
+        #start_time = tm.time()
         self.update_runners(self.market_id)
+        #print(f"update_runners: {tm.time() - start_time}")
+        #start_time = tm.time()
         self.update_volume_data(self.market_id)
+        #print(f"update_volume_data: {tm.time() - start_time}")
+        #start_time = tm.time()
         self.update_market_data(self.market_id)
+        #print(f"update_market_data: {tm.time() - start_time}")
+        #start_time = tm.time()
         self.update_info(self.market_id)
+        #print(f"update_info: {tm.time() - start_time}")
+        #start_time = tm.time()
         self.draw_all_graphs(self.market_id)
+        #print(f"draw_all_graphs: {tm.time() - start_time}")
 
     def create_widgets(self):
 
@@ -126,7 +140,7 @@ class MainWindow:
 
         # Market information
         frame = LabelFrame(self.options_frame, text = 'Information')
-        Label(frame, text = 'Total: ').grid(row = 0, column = 0, padx = 2, pady = 5, sticky = W)
+        Label(frame, text = 'Total matched: ').grid(row = 0, column = 0, padx = 2, pady = 5, sticky = W)
         Label(frame, textvariable = self.info_total).grid(row = 0, column = 1, padx = 5, pady = 2, sticky = W)
         Label(frame, text = 'Pre-race: ').grid(row = 1, column = 0, padx = 5, pady = 2, sticky = W)
         Label(frame, textvariable = self.info_prerace).grid(row = 1, column = 1, padx = 5, pady = 2, sticky = W)
@@ -157,13 +171,23 @@ class MainWindow:
         self.plot_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
         Radiobutton(self.plot_frame, text = 'Market volume', variable = self.option_plot, value = 'MarketVolume', command = self.update_info_plot).pack(side = TOP, anchor = W)
         Radiobutton(self.plot_frame, text = 'Relative volume', variable = self.option_plot, value = 'RelativeVolume', command = self.update_info_plot).pack(side = TOP, anchor = W)
-        Radiobutton(self.plot_frame, text = 'WOM', variable = self.option_plot, value = 'WOM', command = self.update_info_plot).pack(side = TOP, anchor = W)
+        Radiobutton(self.plot_frame, text = 'WOM back', variable = self.option_plot, value = 'WOMBack', command = self.update_info_plot).pack(side = TOP, anchor = W)
+        Radiobutton(self.plot_frame, text = 'WOM lay', variable = self.option_plot, value = 'WOMLay', command = self.update_info_plot).pack(side = TOP, anchor = W)
+        Radiobutton(self.plot_frame, text = 'WOM ratio', variable = self.option_plot, value = 'WOMRatio', command = self.update_info_plot).pack(side = TOP, anchor = W)
+
+        # Price
+        frame = LabelFrame(self.options_frame, text = 'Price')
+        frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
+        Radiobutton(frame, text = 'Spread', variable = self.option_price, value = 'Spread', command = self.update_price_plot).pack(side = TOP, anchor = W)
+        Radiobutton(frame, text = 'Back', variable = self.option_price, value = 'Back', command = self.update_price_plot).pack(side = TOP, anchor = W)
+        Radiobutton(frame, text = 'Lay', variable = self.option_price, value = 'Lay', command = self.update_price_plot).pack(side = TOP, anchor = W)
+        Radiobutton(frame, text = 'Last traded', variable = self.option_price, value = 'Traded', command = self.update_price_plot).pack(side = TOP, anchor = W)
 
         # Scale type
         self.scale_frame = LabelFrame(self.options_frame, text = 'Price scale')
         self.scale_frame.pack(side = TOP, fill = X, padx = 10, pady = 5)
-        Radiobutton(self.scale_frame, text = 'Linear', variable = self.option_scale, value = 'Lin', command = self.update_price_plot).pack(side = TOP, anchor = W)
         Radiobutton(self.scale_frame, text = 'Logarithmic', variable = self.option_scale, value = 'Log', command = self.update_price_plot).pack(side = TOP, anchor = W)
+        Radiobutton(self.scale_frame, text = 'Linear', variable = self.option_scale, value = 'Lin', command = self.update_price_plot).pack(side = TOP, anchor = W)
 
         # Refresh
         frame = LabelFrame(self.options_frame, text = 'Refresh')
@@ -187,7 +211,7 @@ class MainWindow:
         self.plot_frame = Frame(self.master)
         self.plot_frame.pack(side = TOP, fill = BOTH, expand = True)
         self.plot_frame.grid_rowconfigure(0, weight = 1)
-        self.plot_frame.grid_rowconfigure(1, weight = 1)
+        self.plot_frame.grid_rowconfigure(1, weight = 4)
         self.plot_frame.grid_rowconfigure(2, weight = 0)
         self.plot_frame.grid_columnconfigure(0, weight = 1)
 
@@ -224,16 +248,16 @@ class MainWindow:
 
     def update_runners(self, market_id):
         self.runners = [
-            RunnerInfo(r.id, r.runner.name, r.starting_price)
-            for r in self.db_session.query(MarketRunner).filter(MarketRunner.market_id == market_id) if r.starting_price
+            RunnerInfo(r.id, r.runner.name, r.sort_priority, r.starting_price)
+            for r in self.db_session.query(MarketRunner).filter(MarketRunner.market_id == market_id)
         ]
-        self.runners.sort(key = lambda r: r.price)
+        self.runners.sort(key = lambda r: (r.starting_price, r.sort_priority))
         for i in range(min(3, len(self.runners))):
             self.runners[i].selected = True
         for widget in self.runner_frame.winfo_children():
             widget.destroy()
         for runner in self.runners:
-            Checkbutton(self.runner_frame, text = f"{runner.name} ({runner.price})", variable = runner._selected, command = self.update_runners_selected).pack(side = TOP, anchor = 'w')
+            Checkbutton(self.runner_frame, text = f"{runner.name} ({runner.starting_price})", variable = runner._selected, command = self.update_runners_selected).pack(side = TOP, anchor = 'w')
 
     def update_period(self):
         self.draw_all_graphs(self.market_id)
@@ -307,7 +331,10 @@ class MainWindow:
 
         # Get market data
         query = (
-            'select extract(epoch from mb.date_time - m.start_time)/60 mins, r.name, mb.inplay, mrb.last_price_traded, mrb.total_matched, (mrb.total_matched / mb.total_matched) * 100 percent, (mrb.wom_back / (mrb.wom_back + mrb.wom_lay)) * 100 wom'
+            'select extract(epoch from mb.date_time - m.start_time)/60 mins, r.name, mb.inplay,'
+            '   mrb.last_price_traded, mrb.back_price, mrb.lay_price, (mrb.lay_price + mrb.back_price) / 2 spread_price,'
+            '   mrb.total_matched, (mrb.total_matched / mb.total_matched) * 100 percent,'
+            '   mrb.wom_back, mrb.wom_lay, (mrb.wom_back / (mrb.wom_back + mrb.wom_lay)) * 100 wom_ratio'
             ' from market_book mb'
             '   join market m on m.id = mb.market_id'
             '   join market_runner_book mrb on mrb.market_book_id = mb.id'
@@ -318,6 +345,10 @@ class MainWindow:
             ' order by mb.date_time, r.name'
         )
         data = pd.read_sql(query, db_engine, index_col = ['mins', 'name'])
+        data['wom_back_5'] = data['wom_back'].groupby('name').rolling(window = 5).mean().reset_index(level = 0, drop = True)
+        data['wom_lay_5'] = data['wom_lay'].groupby('name').rolling(window = 5).mean().reset_index(level = 0, drop = True)
+        data['wom_ratio'] = (data['wom_back'] / (data['wom_back'] + data['wom_lay'])) * 100
+        data['wom_ratio_5'] = data['wom_ratio'].groupby('name').rolling(window = 5).mean().reset_index(level = 0, drop = True)
         self.market_data = data
 
         # Get market orders
@@ -370,9 +401,12 @@ class MainWindow:
                 if not data.empty:
                     if plot == 'RelativeVolume':
                         data['percent'].unstack().plot(ax = ax)
-                    elif plot == 'WOM':
-                        data['wom_smooth'] = data['wom'].groupby('name').rolling(window = 5).mean().reset_index(level = 0, drop = True)
-                        data['wom_smooth'].unstack().plot(ax = ax)
+                    elif plot == 'WOMBack':
+                        data['wom_back_5'].unstack().plot(ax = ax)
+                    elif plot == 'WOMLay':
+                        data['wom_lay_5'].unstack().plot(ax = ax)
+                    elif plot == 'WOMRatio':
+                        data['wom_ratio_5'].unstack().plot(ax = ax)
                         min, max = ax.get_ylim()
                         ax.axhspan(min, 50, color = '#efcbde')
                         ax.axhspan(50, max, color = '#d0dfda')
@@ -392,6 +426,7 @@ class MainWindow:
             period = self.option_period.get()
             plot = self.option_plot.get()
             scale = self.option_scale.get()
+            price = self.option_price.get()
             if period == 0:
                 data = data[data['inplay'] == True]
                 data = data[data['last_price_traded'] <= 25]
@@ -399,7 +434,14 @@ class MainWindow:
                 data = data[data['inplay'] == False]
                 data = data.query(f"mins >= -{period}")
             if not data.empty:
-                data['last_price_traded'].unstack().plot(ax = ax, logy = (scale == 'Log'))
+                column = 'last_price_traded'
+                if price == 'Back':
+                    column = 'back_price'
+                elif price == 'Lay':
+                    column = 'lay_price'
+                elif price == 'Spread':
+                    column = 'spread_price'
+                data[column].unstack().plot(ax = ax, logy = (scale == 'Log'))
             for index, row in self.market_orders.iterrows():
                 if row['name'] in runners_selected:
                     if row['side'] == 'BACK':
