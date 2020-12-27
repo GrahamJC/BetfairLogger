@@ -7,7 +7,7 @@ import sqlalchemy as sql
 
 import betfairlightweight as bfl
 
-from models import Event, Runner, Market, MarketRunner, MarketBook, MarketRunnerBook, MarketRunnerOrder
+from models import Event, Runner, Jockey, Trainer, Market, MarketRunner, MarketBook, MarketRunnerBook, MarketRunnerOrder
 
 # DB connection URL
 SQLALCHEMY_URL = 'postgresql://postgres:barnum@192.168.1.1:32768/betfairlogger'
@@ -57,7 +57,7 @@ def get_markets(db_session, betfair_api, event):
             market_type_codes=['WIN'],
         ),
         max_results=25,
-        market_projection=['MARKET_START_TIME', 'RUNNER_DESCRIPTION']
+        market_projection=['MARKET_START_TIME', 'RUNNER_METADATA']
     )
     for bfl_market in bfl_markets:
         market = db_session.query(Market).filter(Market.event_id == event.id, Market.betfair_id == bfl_market.market_id).one_or_none()
@@ -87,6 +87,24 @@ def get_markets(db_session, betfair_api, event):
                     runner_id = runner.id,
                     sort_priority = bfl_runner.sort_priority
                 )
+                jockey_name = bfl_runner.metadata['JOCKEY_NAME']
+                if jockey_name:
+                    jockey = db_session.query(Jockey).filter(Jockey.name == jockey_name).one_or_none()
+                    if not jockey:
+                        jockey = Jockey(
+                            name = jockey_name,
+                        )
+                        db_session.add(jockey)
+                    market_runner.jockey_id = jockey.id
+                trainer_name = bfl_runner.metadata['TRAINER_NAME']
+                if trainer_name:
+                    trainer = db_session.query(Trainer).filter(Trainer.name == trainer_name).one_or_none()
+                    if not trainer:
+                        trainer = Trainer(
+                            name = trainer_name,
+                        )
+                        db_session.add(trainer)
+                    market_runner.trainer_id = trainer.id
                 db_session.add(market_runner)
     db_session.commit()
     return markets
@@ -254,6 +272,7 @@ def log_markets(db_session, betfair_api, date):
             print(f"{datetime.datetime.now()}: Updating {market.event.name} {market.name} {market.start_time}")
             market_book = get_market_book(db_session, betfair_api, market)
             if market_book:
+                market.total_mathced = market_book.total_matched
                 market.last_book_id = market_book.id
                 if market_book.status == 'OPEN':
                     if market_book.inplay:

@@ -66,6 +66,11 @@ class Market(Base):
                 .first()
         )
 
+    @property
+    def profit(self):
+        return sum([o.profit for o in self.orders])
+
+
 class Runner(Base):
 
     __tablename__ = 'runner'
@@ -75,6 +80,20 @@ class Runner(Base):
     name = Column(String, nullable=False)
     markets = relationship('MarketRunner', backref='runner')
 
+class Jockey(Base):
+
+    __tablename__ = 'jockey'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+
+class Trainer(Base):
+
+    __tablename__ = 'trainer'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+
 class MarketRunner(Base):
 
     __tablename__ = 'market_runner'
@@ -82,6 +101,8 @@ class MarketRunner(Base):
     id = Column(Integer, primary_key=True)
     market_id = Column(Integer, ForeignKey('market.id'), nullable=False, index = True)
     runner_id = Column(Integer, ForeignKey('runner.id'), nullable=False, index = True)
+    jockey_id = Column(Integer, ForeignKey('jockey.id'), nullable=True, index = True)
+    trainer_id = Column(Integer, ForeignKey('trainer.id'), nullable=True, index = True)
     sort_priority = Column(Integer, nullable=False)
     books = relationship('MarketRunnerBook', backref='market_runner')
     orders = relationship('MarketRunnerOrder', order_by='MarketRunnerOrder.placed_date', backref='market_runner')
@@ -159,7 +180,7 @@ class MarketRunnerBook(Base):
     market_runner_id = Column(Integer, ForeignKey('market_runner.id'), nullable=False, index = True)
     handicap = Column(Float, nullable=False)
     status = Column(String, nullable=False)
-    adjustment_factor =  Column(Float, nullable=False)
+    adjustment_factor =  Column(Float, nullable=True)
     last_price_traded = Column(Float, nullable=True)
     total_matched = Column(Float, nullable=True)
     removal_date = Column(DateTime, nullable=True)
